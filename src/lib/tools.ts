@@ -4,6 +4,12 @@ import { joinbank } from "./joinbank";
 import { alertOwner } from "./evolution";
 import { dc } from "@/channels/datacrazy/client";
 
+// import lazy de queue pra evitar ciclo (queue → gemini → tools)
+async function enqueueSignaturePoll(data: { conversationId: string; contractId: string }) {
+  const { enqueueSignaturePoll: fn } = await import("./queue");
+  return fn(data);
+}
+
 /**
  * Tool registry da Sofia.
  *
@@ -146,6 +152,12 @@ const send_signature_link: ToolDef = {
         text: `Aqui o link da assinatura: ${link.url}`,
       });
     }
+
+    // enfileira polling de status (worker checa a cada 60s ate signed=true)
+    await enqueueSignaturePoll({
+      conversationId: conversation.id,
+      contractId: link.contractId,
+    });
 
     return { ok: true, ...link };
   },
