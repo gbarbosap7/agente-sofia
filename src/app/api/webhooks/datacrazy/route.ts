@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { normalizeDcPayload } from "@/channels/datacrazy";
+import { dc } from "@/channels/datacrazy/client";
 import { ensureConversation, dedupAndPersistInbound } from "@/lib/conversation";
 import { withLock } from "@/lib/redis";
+import { runTurn } from "@/lib/gemini";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,7 +43,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Lock por phone — evita 2 webhooks concorrentes processarem ao mesmo tempo
-  const result = await withLock(`phone:${normalized.phone}`, 10, async () => {
+  const result = await withLock(`phone:${normalized.phone}`, 60, async () => {
     const conversation = await ensureConversation(normalized);
 
     if (!conversation.aiEnabled) {
@@ -67,8 +69,50 @@ export async function POST(req: NextRequest) {
 
     if (isDuplicate) return { duplicate: true, messageId: message.id };
 
-    // TODO: enqueue para worker BullMQ processar com Gemini
-    return { messageId: message.id, conversationId: conversation.id };
+    // pipeline IA — sincrono dentro do lock pra ordem de mensagens
+    let aiReply: string | null = null;
+    let aiError: string | null = null;
+    let toolsRun: string[] = [];
+    try {
+      const turn = await runTurn(conversation);
+      aiReply = turn.reply;
+      toolsRun = turn.toolsRun;
+
+      if (aiReply && conversation.externalConvId) {
+        const sent = await dc.sendMessage({
+          conversationId: conversation.externalConvId,
+          text: aiReply,
+        });
+        console.log(JSON.stringify({
+          event: "dc.send.ok",
+          conv_id: conversation.id,
+          dc_msg_id: sent.id,
+          tools_run: toolsRun,
+          text_preview: aiReply.slice(0, 80),
+        }));
+      } else if (aiReply && !conversation.externalConvId) {
+        console.warn(JSON.stringify({
+          event: "dc.send.skipped",
+          reason: "no_external_conv_id",
+          conv_id: conversation.id,
+        }));
+      }
+    } catch (err) {
+      aiError = err instanceof Error ? err.message : String(err);
+      console.error(JSON.stringify({
+        event: "ai.turn.error",
+        conv_id: conversation.id,
+        error: aiError,
+      }));
+    }
+
+    return {
+      messageId: message.id,
+      conversationId: conversation.id,
+      aiReply: aiReply ? aiReply.slice(0, 200) : null,
+      toolsRun,
+      aiError,
+    };
   });
 
   if (result === null) {
