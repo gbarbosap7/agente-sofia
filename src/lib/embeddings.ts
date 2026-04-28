@@ -16,13 +16,22 @@ export async function embed(text: string): Promise<number[]> {
   const res = await client().models.embedContent({
     model: env.GEMINI_EMBED_MODEL,
     contents: t,
+    config: { outputDimensionality: 768 },
   });
   // res.embeddings: [{ values: number[] }]
   const values = res.embeddings?.[0]?.values;
   if (!values || values.length === 0) {
     throw new Error("embedding_empty");
   }
-  return values;
+  // gemini-embedding-001 com outputDimensionality < 3072 requer L2-normalizacao
+  return l2norm(values);
+}
+
+function l2norm(v: number[]): number[] {
+  let sum = 0;
+  for (const x of v) sum += x * x;
+  const n = Math.sqrt(sum) || 1;
+  return v.map((x) => x / n);
 }
 
 export async function embedMany(texts: string[]): Promise<number[][]> {
