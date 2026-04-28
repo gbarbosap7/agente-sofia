@@ -1,26 +1,78 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@layer base {
+  :root {
+    /* Nova · Alien Green (dark default) */
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+
+    --card: oklch(0.18 0 0);
+    --card-foreground: oklch(0.985 0 0);
+
+    --muted: oklch(0.22 0 0);
+    --muted-foreground: oklch(0.6 0 0);
+
+    --border: oklch(0.27 0 0);
+    --input: oklch(0.27 0 0);
+
+    --accent: oklch(0.93 0.29 130);          /* Alien Green */
+    --accent-foreground: oklch(0.145 0 0);
+
+    --primary: oklch(0.93 0.29 130);
+    --primary-foreground: oklch(0.145 0 0);
+
+    --secondary: oklch(0.27 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+
+    --destructive: oklch(0.6 0.21 22);
+    --destructive-foreground: oklch(0.985 0 0);
+
+    --ring: oklch(0.93 0.29 130);
+    --radius: 0.625rem;
+  }
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-ring: var(--ring);
+  --radius: var(--radius);
+  --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  border-color: var(--border);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01", "cv11";
 }
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+/* scrollbar discreta */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }

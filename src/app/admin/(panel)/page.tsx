@@ -1,5 +1,8 @@
-import { prisma } from "@/lib/prisma";
 import Link from "next/link";
+import { ArrowRight, MessagesSquare, Bot, Activity, ChevronRight } from "lucide-react";
+import { prisma } from "@/lib/prisma";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 export const dynamic = "force-dynamic";
 
@@ -19,16 +22,6 @@ async function getStats() {
   return { convsTotal, convsAiOn, msgs24h, msgsAssist24h, lastConvs };
 }
 
-function Card({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
-  return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
-      <div className="text-zinc-500 text-xs uppercase tracking-wide">{label}</div>
-      <div className="mt-1 text-2xl font-semibold">{value}</div>
-      {hint && <div className="text-xs text-zinc-600 mt-1">{hint}</div>}
-    </div>
-  );
-}
-
 export default async function DashboardPage() {
   let stats: Awaited<ReturnType<typeof getStats>> | null = null;
   let dbErr: string | null = null;
@@ -39,25 +32,35 @@ export default async function DashboardPage() {
   }
 
   return (
-    <div className="max-w-5xl space-y-8">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">dashboard</h1>
-        <p className="text-zinc-500 text-sm mt-1">visao geral do agente nas ultimas 24h.</p>
+        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+        <p className="text-muted-foreground text-sm mt-1">visão geral do agente nas últimas 24h</p>
       </div>
 
       {dbErr ? (
-        <div className="rounded-lg border border-red-900 bg-red-950/30 p-4 text-sm">
-          <div className="text-red-400 font-medium">DB indisponivel</div>
-          <pre className="text-red-300 text-xs mt-2 whitespace-pre-wrap">{dbErr}</pre>
-        </div>
+        <Card className="border-destructive/30 bg-destructive/5">
+          <CardHeader>
+            <CardTitle className="text-destructive">DB indisponível</CardTitle>
+            <CardDescription>
+              <pre className="text-xs whitespace-pre-wrap mt-2 text-destructive/80">{dbErr}</pre>
+            </CardDescription>
+          </CardHeader>
+        </Card>
       ) : (
         <>
-          <div className="grid grid-cols-4 gap-3">
-            <Card label="conversas" value={stats!.convsTotal} hint={`${stats!.convsAiOn} com IA on`} />
-            <Card label="mensagens 24h" value={stats!.msgs24h} />
-            <Card label="respostas IA 24h" value={stats!.msgsAssist24h} />
-            <Card
-              label="resposta rate"
+          <div className="grid grid-cols-4 gap-4">
+            <StatCard
+              icon={MessagesSquare}
+              label="Conversas"
+              value={stats!.convsTotal}
+              hint={`${stats!.convsAiOn} com IA on`}
+            />
+            <StatCard icon={Activity} label="Mensagens 24h" value={stats!.msgs24h} />
+            <StatCard icon={Bot} label="Respostas IA 24h" value={stats!.msgsAssist24h} />
+            <StatCard
+              icon={Activity}
+              label="Resposta rate"
               value={
                 stats!.msgs24h > 0
                   ? `${Math.round((stats!.msgsAssist24h / stats!.msgs24h) * 100)}%`
@@ -66,42 +69,82 @@ export default async function DashboardPage() {
             />
           </div>
 
-          <div>
-            <h2 className="text-sm uppercase tracking-wide text-zinc-500 mb-3">
-              ultimas conversas
-            </h2>
-            <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 divide-y divide-zinc-900">
-              {stats!.lastConvs.length === 0 && (
-                <div className="p-4 text-sm text-zinc-500">nenhuma conversa ainda.</div>
-              )}
-              {stats!.lastConvs.map((c) => (
-                <Link
-                  key={c.id}
-                  href={`/admin/conversas/${c.id}`}
-                  className="flex items-center justify-between p-3 hover:bg-zinc-900/60 transition text-sm"
-                >
-                  <div>
-                    <span className="text-zinc-200">{c.contactName ?? "—"}</span>
-                    <span className="text-zinc-500 ml-2 font-mono text-xs">{c.phone}</span>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs">
-                    <span
-                      className={
-                        c.aiEnabled ? "text-[#a3ff5c]" : "text-zinc-600"
-                      }
-                    >
-                      {c.aiEnabled ? "● ia on" : "○ ia off"}
-                    </span>
-                    <span className="text-zinc-600">
-                      {new Date(c.updatedAt).toLocaleString("pt-BR")}
-                    </span>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </div>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Últimas conversas</CardTitle>
+                <CardDescription>5 mais recentes</CardDescription>
+              </div>
+              <Link
+                href="/admin/conversas"
+                className="text-xs text-accent hover:underline flex items-center gap-1"
+              >
+                ver todas <ArrowRight className="h-3 w-3" />
+              </Link>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="divide-y divide-border">
+                {stats!.lastConvs.length === 0 && (
+                  <div className="p-5 text-sm text-muted-foreground">nenhuma conversa ainda.</div>
+                )}
+                {stats!.lastConvs.map((c) => (
+                  <Link
+                    key={c.id}
+                    href={`/admin/conversas/${c.id}`}
+                    className="flex items-center justify-between px-5 py-3 hover:bg-muted/50 transition group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center text-xs">
+                        {(c.contactName ?? "?").slice(0, 1).toUpperCase()}
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium">
+                          {c.contactName ?? <span className="text-muted-foreground">(sem nome)</span>}
+                        </div>
+                        <div className="text-xs text-muted-foreground font-mono">{c.phone}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Badge variant={c.aiEnabled ? "accent" : "default"}>
+                        {c.aiEnabled ? "ia on" : "ia off"}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(c.updatedAt).toLocaleString("pt-BR")}
+                      </span>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition" />
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         </>
       )}
     </div>
+  );
+}
+
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  hint,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string | number;
+  hint?: string;
+}) {
+  return (
+    <Card>
+      <CardContent className="p-5">
+        <div className="flex items-center justify-between">
+          <span className="text-xs uppercase tracking-wide text-muted-foreground">{label}</span>
+          <Icon className="h-4 w-4 text-muted-foreground" />
+        </div>
+        <div className="mt-2 text-2xl font-bold">{value}</div>
+        {hint && <div className="text-xs text-muted-foreground mt-1">{hint}</div>}
+      </CardContent>
+    </Card>
   );
 }

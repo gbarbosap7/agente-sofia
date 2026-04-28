@@ -2,6 +2,10 @@
 
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Bot } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 function LoginForm() {
   const router = useRouter();
@@ -23,7 +27,7 @@ function LoginForm() {
     setBusy(false);
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
-      setErr(j.error ?? "Falha no login");
+      setErr(j.error ?? "credenciais inválidas");
       return;
     }
     const next = search.get("next") || "/admin";
@@ -32,51 +36,52 @@ function LoginForm() {
   }
 
   return (
-    <form onSubmit={submit} className="w-full max-w-sm space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">
-          <span className="text-[#a3ff5c]">sofia</span> · admin
-        </h1>
-        <p className="text-zinc-500 text-sm mt-1">Entre pra gerenciar o agente.</p>
-      </div>
+    <Card className="w-full max-w-sm">
+      <CardContent className="p-6 space-y-5">
+        <div className="text-center">
+          <div className="inline-flex items-center justify-center h-12 w-12 rounded-xl bg-accent/15 border border-accent/30 mb-3">
+            <Bot className="h-6 w-6 text-accent" />
+          </div>
+          <h1 className="text-xl font-bold tracking-tight">
+            <span className="text-accent">agente-sofia</span>
+          </h1>
+          <p className="text-muted-foreground text-xs mt-1">
+            Entre para gerenciar o agente.
+          </p>
+        </div>
 
-      <div className="space-y-3">
-        <input
-          type="email"
-          placeholder="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          autoFocus
-          className="w-full px-3 py-2 rounded-md bg-zinc-900 border border-zinc-800 focus:border-[#a3ff5c] focus:outline-none text-sm"
-        />
-        <input
-          type="password"
-          placeholder="senha"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          className="w-full px-3 py-2 rounded-md bg-zinc-900 border border-zinc-800 focus:border-[#a3ff5c] focus:outline-none text-sm"
-        />
-      </div>
+        <form onSubmit={submit} className="space-y-3">
+          <Input
+            type="email"
+            placeholder="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            autoFocus
+          />
+          <Input
+            type="password"
+            placeholder="senha"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
 
-      {err && <div className="text-red-400 text-sm">{err}</div>}
+          {err && <div className="text-destructive text-xs">{err}</div>}
 
-      <button
-        type="submit"
-        disabled={busy}
-        className="w-full py-2 rounded-md bg-[#a3ff5c] text-zinc-950 font-medium hover:opacity-90 disabled:opacity-50 text-sm"
-      >
-        {busy ? "entrando…" : "entrar"}
-      </button>
-    </form>
+          <Button type="submit" disabled={busy} className="w-full">
+            {busy ? "entrando…" : "Entrar"}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 
 export default function LoginPage() {
   return (
-    <main className="min-h-screen flex items-center justify-center bg-zinc-950 text-zinc-100 px-6">
-      <Suspense fallback={<div className="text-zinc-500">…</div>}>
+    <main className="min-h-screen flex items-center justify-center bg-background text-foreground px-6">
+      <Suspense fallback={<div className="text-muted-foreground">…</div>}>
         <LoginForm />
       </Suspense>
     </main>
