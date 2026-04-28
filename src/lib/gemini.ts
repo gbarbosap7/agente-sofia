@@ -105,12 +105,21 @@ export async function runTurn(conversation: Conversation): Promise<{
       return { reply: text, toolsRun };
     }
 
-    // adiciona o turno do modelo (com functionCalls) ao contents
+    // adiciona o turno do modelo (com functionCalls) ao contents.
+    // IMPORTANTE: incluir thoughtSignature quando presente — gemini 2.5+
+    // exige isso pra continuar a conversa com tools.
     contents.push({
       role: "model",
-      parts: calls.map((c) => ({
-        functionCall: { name: c.name, args: c.args ?? {} },
-      })),
+      parts: calls.map((c) => {
+        const fc: { name?: string; args?: Record<string, unknown> } = {
+          name: c.name,
+          args: (c.args ?? {}) as Record<string, unknown>,
+        };
+        const part: Record<string, unknown> = { functionCall: fc };
+        const sig = (c as { thoughtSignature?: string }).thoughtSignature;
+        if (sig) part.thoughtSignature = sig;
+        return part as unknown as Content["parts"][number];
+      }),
     });
 
     // executa tools em sequencia e adiciona functionResponses
