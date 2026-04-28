@@ -74,6 +74,9 @@ export async function runTurn(conversation: Conversation): Promise<{
       config: {
         systemInstruction: `${systemPrompt}\n\n---\n${ctxPrefix}`,
         temperature: 0.6,
+        // desabilita thinking mode pra evitar exigencia de thought_signature
+        // ao reenviar functionCalls (gemini 2.5+).
+        thinkingConfig: { thinkingBudget: 0 },
         tools: [
           {
             functionDeclarations: getDeclarations() as unknown as FunctionDeclaration[],
