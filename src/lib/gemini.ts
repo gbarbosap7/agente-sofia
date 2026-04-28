@@ -86,7 +86,13 @@ export async function runTurn(conversation: Conversation): Promise<{
       },
     });
 
-    const calls: FunctionCall[] = res.functionCalls ?? [];
+    // capturamos os parts originais do candidate pra preservar
+    // thoughtSignature (gemini 2.5+ exige re-envio integral).
+    const modelParts: Part[] = res.candidates?.[0]?.content?.parts ?? [];
+    const calls: FunctionCall[] = modelParts
+      .map((p) => p.functionCall)
+      .filter((c): c is FunctionCall => Boolean(c));
+
     if (calls.length === 0) {
       const text = (res.text ?? "").trim();
       if (!text) return { reply: null, toolsRun };
@@ -106,22 +112,9 @@ export async function runTurn(conversation: Conversation): Promise<{
       return { reply: text, toolsRun };
     }
 
-    // adiciona o turno do modelo (com functionCalls) ao contents.
-    // IMPORTANTE: incluir thoughtSignature quando presente — gemini 2.5+
-    // exige isso pra continuar a conversa com tools.
-    contents.push({
-      role: "model",
-      parts: calls.map((c) => {
-        const fc: { name?: string; args?: Record<string, unknown> } = {
-          name: c.name,
-          args: (c.args ?? {}) as Record<string, unknown>,
-        };
-        const part: Record<string, unknown> = { functionCall: fc };
-        const sig = (c as { thoughtSignature?: string }).thoughtSignature;
-        if (sig) part.thoughtSignature = sig;
-        return part as unknown as Part;
-      }),
-    });
+    // re-empurra os parts originais do model — preserva thoughtSignature,
+    // que e exigido pelo gemini 2.5+ pra continuidade de tool turns.
+    contents.push({ role: "model", parts: modelParts });
 
     // executa tools em sequencia e adiciona functionResponses
     const responses: Content[] = [];
