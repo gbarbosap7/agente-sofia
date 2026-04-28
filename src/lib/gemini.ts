@@ -3,6 +3,7 @@ import {
   type Content,
   type FunctionCall,
   type FunctionDeclaration,
+  type Part,
 } from "@google/genai";
 import { Prisma, type Conversation } from "@prisma/client";
 import { env } from "./env";
@@ -118,7 +119,7 @@ export async function runTurn(conversation: Conversation): Promise<{
         const part: Record<string, unknown> = { functionCall: fc };
         const sig = (c as { thoughtSignature?: string }).thoughtSignature;
         if (sig) part.thoughtSignature = sig;
-        return part as unknown as Content["parts"][number];
+        return part as unknown as Part;
       }),
     });
 
