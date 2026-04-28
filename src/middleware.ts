@@ -5,7 +5,7 @@ import { verifyToken, ADMIN_COOKIE } from "@/lib/auth";
  * Protege /admin/* — redireciona pra /admin/login se token inválido.
  * NÃO protege /admin/login nem /api/admin/login (senão deadlock).
  */
-export function middleware(req: NextRequest) {
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // públicas
@@ -18,7 +18,7 @@ export function middleware(req: NextRequest) {
   }
 
   const token = req.cookies.get(ADMIN_COOKIE)?.value;
-  if (verifyToken(token)) return NextResponse.next();
+  if (await verifyToken(token)) return NextResponse.next();
 
   if (pathname.startsWith("/api/")) {
     return NextResponse.json({ ok: false, error: "unauthenticated" }, { status: 401 });
