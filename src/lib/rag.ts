@@ -54,9 +54,10 @@ export async function ingestDocument(input: {
   source?: string;
   content: string;
   audience?: "client" | "internal";
-  agentId?: string | null;            // null = compartilhado
+  agentId: string;                     // OBRIGATORIO — KB sempre scoped por agente
   metadata?: Record<string, unknown>;
 }): Promise<{ documentId: string; chunkCount: number }> {
+  if (!input.agentId) throw new Error("agentId_required");
   const chunks = chunkText(input.content);
   if (chunks.length === 0) throw new Error("empty_content");
 
@@ -65,7 +66,7 @@ export async function ingestDocument(input: {
       title: input.title,
       source: input.source ?? null,
       audience: input.audience ?? "client",
-      agentId: input.agentId ?? null,
+      agentId: input.agentId,
       metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
     },
   });
@@ -109,8 +110,10 @@ export async function searchRag(
   audience: "client" | "internal" = "client",
   agentId?: string,
 ): Promise<RagHit[]> {
+  if (!agentId) {
+    throw new Error("searchRag_requires_agentId");
+  }
   const qVec = await embed(query);
-  // Filtros: audience + (agent_id = X OR agent_id IS NULL) — null = compartilhado
   const rows = await prisma.$queryRawUnsafe<
     Array<{
       id: string;
@@ -125,13 +128,13 @@ export async function searchRag(
      FROM public.v2_kb_chunks c
      JOIN public.v2_kb_documents d ON d.id = c.document_id
      WHERE d.audience = $3
-       AND ($4::text IS NULL OR d.agent_id IS NULL OR d.agent_id = $4)
+       AND d.agent_id = $4
      ORDER BY c.embedding <=> $1::vector
      LIMIT $2`,
     vecLiteral(qVec),
     topK,
     audience,
-    agentId ?? null,
+    agentId,
   );
   return rows.map((r) => ({
     chunkId: r.id,

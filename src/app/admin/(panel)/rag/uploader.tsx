@@ -8,7 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { cn } from "@/lib/cn";
 
-export function RagUploader() {
+export function RagUploader({
+  agentId,
+  agentName,
+}: {
+  agentId: string;
+  agentName: string;
+}) {
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -43,6 +49,7 @@ export function RagUploader() {
           content,
           source: source || undefined,
           audience,
+          agentId,
         }),
       });
       if (!res.ok) {
@@ -66,7 +73,8 @@ export function RagUploader() {
           <Upload className="h-4 w-4 text-accent" /> Novo documento
         </CardTitle>
         <CardDescription>
-          Upload de .txt/.md ou cole o conteúdo. PDF chega depois.
+          Upload de .txt/.md ou cole o conteúdo. Será scoped para{" "}
+          <span className="text-accent font-medium">{agentName}</span> apenas.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

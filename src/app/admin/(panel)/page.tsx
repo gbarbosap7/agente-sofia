@@ -3,17 +3,23 @@ import { ArrowRight, MessagesSquare, Bot, Activity, ChevronRight } from "lucide-
 import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { getCurrentAgent } from "@/lib/current-agent";
 
 export const dynamic = "force-dynamic";
 
-async function getStats() {
+async function getStats(agentId: string) {
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const [convsTotal, convsAiOn, msgs24h, msgsAssist24h, lastConvs] = await Promise.all([
-    prisma.conversation.count(),
-    prisma.conversation.count({ where: { aiEnabled: true } }),
-    prisma.message.count({ where: { createdAt: { gte: since24h } } }),
-    prisma.message.count({ where: { createdAt: { gte: since24h }, role: "assistant" } }),
+    prisma.conversation.count({ where: { agentId } }),
+    prisma.conversation.count({ where: { agentId, aiEnabled: true } }),
+    prisma.message.count({
+      where: { createdAt: { gte: since24h }, conversation: { agentId } },
+    }),
+    prisma.message.count({
+      where: { createdAt: { gte: since24h }, role: "assistant", conversation: { agentId } },
+    }),
     prisma.conversation.findMany({
+      where: { agentId },
       orderBy: { updatedAt: "desc" },
       take: 5,
       select: { id: true, phone: true, contactName: true, aiEnabled: true, updatedAt: true },
@@ -23,10 +29,27 @@ async function getStats() {
 }
 
 export default async function DashboardPage() {
+  const agent = await getCurrentAgent();
+  if (!agent) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Nenhum agente configurado</CardTitle>
+          <CardDescription>
+            <Link href="/admin/agents" className="text-accent hover:underline">
+              Crie um agente
+            </Link>{" "}
+            pra começar.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
+
   let stats: Awaited<ReturnType<typeof getStats>> | null = null;
   let dbErr: string | null = null;
   try {
-    stats = await getStats();
+    stats = await getStats(agent.id);
   } catch (e) {
     dbErr = e instanceof Error ? e.message : String(e);
   }
@@ -35,7 +58,9 @@ export default async function DashboardPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground text-sm mt-1">visão geral do agente nas últimas 24h</p>
+        <p className="text-muted-foreground text-sm mt-1">
+          agente <span className="text-accent font-medium">{agent.name}</span> — últimas 24h
+        </p>
       </div>
 
       {dbErr ? (

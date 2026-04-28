@@ -8,8 +8,11 @@ import {
   Wrench,
   Settings,
   LogOut,
+  Users,
 } from "lucide-react";
 import { getSession } from "@/lib/auth";
+import { listAgents, getCurrentAgent } from "@/lib/current-agent";
+import { AgentSwitcher } from "./agent-switcher";
 
 const NAV = [
   { href: "/admin", label: "Dashboard", icon: LayoutGrid },
@@ -17,6 +20,7 @@ const NAV = [
   { href: "/admin/conversas", label: "Conversas", icon: MessagesSquare },
   { href: "/admin/agente", label: "Agente", icon: Bot },
   { href: "/admin/rag", label: "Tools / RAG", icon: Wrench },
+  { href: "/admin/agents", label: "Agentes", icon: Users },
   { href: "/admin/configs", label: "Configurações", icon: Settings },
 ];
 
@@ -24,14 +28,23 @@ export default async function PanelLayout({ children }: { children: React.ReactN
   const session = await getSession();
   if (!session) redirect("/admin/login");
 
+  const [agents, current] = await Promise.all([listAgents(), getCurrentAgent()]);
+
   return (
     <div className="min-h-screen flex bg-background text-foreground">
       <aside className="w-64 border-r border-border flex flex-col">
         <div className="px-5 py-6 border-b border-border">
           <div className="text-lg font-bold tracking-tight">
-            <span className="text-accent">agente-sofia</span>
+            <span className="text-accent">agentes</span>
+            <span className="text-muted-foreground text-xs ml-2">adapta</span>
           </div>
-          <div className="text-xs text-muted-foreground mt-0.5">SDR consignado · DataCrazy</div>
+        </div>
+
+        <div className="px-3 py-3 border-b border-border">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground px-2 mb-1.5">
+            Agente atual
+          </div>
+          <AgentSwitcher agents={agents} currentSlug={current?.slug ?? null} />
         </div>
 
         <nav className="flex-1 flex flex-col gap-0.5 p-3 text-sm">

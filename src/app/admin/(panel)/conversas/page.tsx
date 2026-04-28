@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { getCurrentAgent } from "@/lib/current-agent";
 
 export const dynamic = "force-dynamic";
 
@@ -16,14 +17,17 @@ export default async function ConversasPage({
   const pageNum = Math.max(1, Number(page ?? 1));
   const PER = 30;
 
+  const agent = await getCurrentAgent();
+  const baseWhere = { agentId: agent?.id ?? "__none__" };
   const where = q
     ? {
+        ...baseWhere,
         OR: [
           { phone: { contains: q } },
           { contactName: { contains: q, mode: "insensitive" as const } },
         ],
       }
-    : {};
+    : baseWhere;
 
   const [items, total] = await Promise.all([
     prisma.conversation.findMany({

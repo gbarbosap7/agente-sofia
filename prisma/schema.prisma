@@ -96,14 +96,14 @@ model ToolCall {
 
 model KbDocument {
   id          String     @id @default(cuid())
-  agentId     String?    @map("agent_id")           // null = compartilhado entre todos os agentes
+  agentId     String     @map("agent_id")            // KB e SEMPRE scoped por agente (isolamento)
   title       String
   source      String?
   audience    String     @default("client")          // client | internal
   metadata    Json?
   createdAt   DateTime   @default(now()) @map("created_at")
 
-  agent       Agent?     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  agent       Agent      @relation(fields: [agentId], references: [id], onDelete: Cascade)
   chunks      KbChunk[]
 
   @@index([audience])

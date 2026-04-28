@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
     content?: string;
     source?: string;
     audience?: "client" | "internal";
+    agentId?: string;
   };
   try {
     body = await req.json();
@@ -37,6 +38,9 @@ export async function POST(req: NextRequest) {
   if (!body.title || !body.content) {
     return NextResponse.json({ ok: false, error: "missing_title_or_content" }, { status: 400 });
   }
+  if (!body.agentId) {
+    return NextResponse.json({ ok: false, error: "missing_agentId" }, { status: 400 });
+  }
   if (body.content.length > 200_000) {
     return NextResponse.json({ ok: false, error: "content_too_large" }, { status: 400 });
   }
@@ -45,6 +49,7 @@ export async function POST(req: NextRequest) {
     content: body.content,
     source: body.source,
     audience: body.audience === "internal" ? "internal" : "client",
+    agentId: body.agentId,
   });
   return NextResponse.json({ ok: true, ...result });
 }

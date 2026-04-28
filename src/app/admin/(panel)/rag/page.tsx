@@ -3,17 +3,23 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { RagUploader } from "./uploader";
 import { DeleteDocButton } from "./delete-button";
+import { getCurrentAgent } from "@/lib/current-agent";
 
 export const dynamic = "force-dynamic";
 
 export default async function RagPage() {
-  const docs = await prisma.kbDocument.findMany({
-    orderBy: { createdAt: "desc" },
-    take: 100,
-  });
+  const agent = await getCurrentAgent();
+  const docs = agent
+    ? await prisma.kbDocument.findMany({
+        where: { agentId: agent.id },
+        orderBy: { createdAt: "desc" },
+        take: 100,
+      })
+    : [];
   const counts = await prisma.kbChunk.groupBy({
     by: ["documentId"],
     _count: { _all: true },
+    where: { document: { agentId: agent?.id ?? "__none__" } },
   });
   const m = new Map(counts.map((c) => [c.documentId, c._count._all]));
 
@@ -27,7 +33,15 @@ export default async function RagPage() {
         </p>
       </div>
 
-      <RagUploader />
+      {agent ? (
+        <RagUploader agentId={agent.id} agentName={agent.name} />
+      ) : (
+        <Card>
+          <CardContent className="p-5 text-sm text-muted-foreground">
+            selecione um agente no menu lateral pra subir documentos.
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
