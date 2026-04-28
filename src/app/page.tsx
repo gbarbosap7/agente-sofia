@@ -36,8 +36,14 @@ export default function Home() {
           </ul>
         </div>
 
-        <div className="text-xs text-zinc-600">
-          Adapta · {new Date().getFullYear()}
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-zinc-600">Adapta · {new Date().getFullYear()}</span>
+          <a
+            href="/admin"
+            className="text-zinc-500 hover:text-[#a3ff5c] transition border border-zinc-800 hover:border-[#a3ff5c]/40 rounded-md px-3 py-1"
+          >
+            admin →
+          </a>
         </div>
       </div>
     </main>
