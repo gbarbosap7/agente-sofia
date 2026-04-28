@@ -53,6 +53,7 @@ export async function ingestDocument(input: {
   title: string;
   source?: string;
   content: string;
+  audience?: "client" | "internal";
   metadata?: Record<string, unknown>;
 }): Promise<{ documentId: string; chunkCount: number }> {
   const chunks = chunkText(input.content);
@@ -62,6 +63,7 @@ export async function ingestDocument(input: {
     data: {
       title: input.title,
       source: input.source ?? null,
+      audience: input.audience ?? "client",
       metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
     },
   });
@@ -99,7 +101,11 @@ export interface RagHit {
   similarity: number;
 }
 
-export async function searchRag(query: string, topK = 4): Promise<RagHit[]> {
+export async function searchRag(
+  query: string,
+  topK = 4,
+  audience: "client" | "internal" = "client",
+): Promise<RagHit[]> {
   const qVec = await embed(query);
   const rows = await prisma.$queryRawUnsafe<
     Array<{
@@ -114,10 +120,12 @@ export async function searchRag(query: string, topK = 4): Promise<RagHit[]> {
             1 - (c.embedding <=> $1::vector) AS sim
      FROM public.v2_kb_chunks c
      JOIN public.v2_kb_documents d ON d.id = c.document_id
+     WHERE d.audience = $3
      ORDER BY c.embedding <=> $1::vector
      LIMIT $2`,
     vecLiteral(qVec),
     topK,
+    audience,
   );
   return rows.map((r) => ({
     chunkId: r.id,

@@ -41,7 +41,18 @@ export default async function RagPage() {
                 className="flex items-center justify-between px-4 py-2 text-sm"
               >
                 <div>
-                  <div className="text-zinc-100">{d.title}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-zinc-100">{d.title}</span>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+                        d.audience === "internal"
+                          ? "bg-amber-500/15 text-amber-400 border border-amber-500/30"
+                          : "bg-zinc-800/50 text-zinc-400 border border-zinc-700"
+                      }`}
+                    >
+                      {d.audience}
+                    </span>
+                  </div>
                   <div className="text-zinc-500 text-xs mt-0.5">
                     {d.source && <span className="mr-3">{d.source}</span>}
                     <span>{m.get(d.id) ?? 0} chunks</span>

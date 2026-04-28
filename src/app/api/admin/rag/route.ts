@@ -23,7 +23,12 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  let body: { title?: string; content?: string; source?: string };
+  let body: {
+    title?: string;
+    content?: string;
+    source?: string;
+    audience?: "client" | "internal";
+  };
   try {
     body = await req.json();
   } catch {
@@ -39,6 +44,7 @@ export async function POST(req: NextRequest) {
     title: body.title,
     content: body.content,
     source: body.source,
+    audience: body.audience === "internal" ? "internal" : "client",
   });
   return NextResponse.json({ ok: true, ...result });
 }

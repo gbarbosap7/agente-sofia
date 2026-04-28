@@ -75,11 +75,13 @@ model KbDocument {
   id          String     @id @default(cuid())
   title       String
   source      String?
+  audience    String     @default("client")  // client | internal
   metadata    Json?
   createdAt   DateTime   @default(now()) @map("created_at")
 
   chunks      KbChunk[]
 
+  @@index([audience])
   @@map("v2_kb_documents")
 }
 

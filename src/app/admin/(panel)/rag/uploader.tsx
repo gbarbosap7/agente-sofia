@@ -8,6 +8,7 @@ export function RagUploader() {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [source, setSource] = useState("");
+  const [audience, setAudience] = useState<"client" | "internal">("client");
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -32,7 +33,12 @@ export function RagUploader() {
       const res = await fetch("/api/admin/rag", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, content, source: source || undefined }),
+        body: JSON.stringify({
+          title,
+          content,
+          source: source || undefined,
+          audience,
+        }),
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
@@ -59,7 +65,7 @@ export function RagUploader() {
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="titulo (ex: Politica de comissionamento 2026)"
+          placeholder="titulo (ex: Limites e prazos CLT 2026)"
           className="px-3 py-2 rounded-md bg-zinc-950 border border-zinc-800 focus:border-[#a3ff5c] focus:outline-none text-sm"
         />
         <input
@@ -68,6 +74,32 @@ export function RagUploader() {
           placeholder="source (opcional, ex: arquivo.pdf)"
           className="px-3 py-2 rounded-md bg-zinc-950 border border-zinc-800 focus:border-[#a3ff5c] focus:outline-none text-sm"
         />
+      </div>
+
+      <div className="flex items-center gap-2 text-xs">
+        <span className="text-zinc-500 uppercase tracking-wide">audience:</span>
+        <button
+          type="button"
+          onClick={() => setAudience("client")}
+          className={`px-3 py-1 rounded-md border text-xs ${
+            audience === "client"
+              ? "border-[#a3ff5c] text-[#a3ff5c] bg-[#a3ff5c]/10"
+              : "border-zinc-800 text-zinc-500 hover:text-zinc-300"
+          }`}
+        >
+          client (vai pro cliente)
+        </button>
+        <button
+          type="button"
+          onClick={() => setAudience("internal")}
+          className={`px-3 py-1 rounded-md border text-xs ${
+            audience === "internal"
+              ? "border-amber-500 text-amber-400 bg-amber-500/10"
+              : "border-zinc-800 text-zinc-500 hover:text-zinc-300"
+          }`}
+        >
+          internal (NUNCA pro cliente)
+        </button>
       </div>
 
       <input
