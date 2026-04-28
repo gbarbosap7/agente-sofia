@@ -1,0 +1,109 @@
+// Prisma schema — agente-sofia v2
+//
+// IMPORTANTE: Sofia v1 tem suas próprias tabelas no mesmo Supabase
+// (sofia_sessions, sofia_learnings, sofia_active_insights). Para evitar
+// que migrations Prisma alterem tabelas legadas, modelamos apenas as
+// tabelas novas v2. Acesso ao legado via prisma.$queryRaw.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Conversation {
+  id             String         @id @default(cuid())
+  channel        String         // "datacrazy"
+  externalConvId String?        @map("external_conv_id")
+  phone          String         @unique
+  contactName    String?        @map("contact_name")
+  leadId         String?        @map("lead_id")
+  state          String         @default("active")     // active | paused | closed
+  aiEnabled      Boolean        @default(true) @map("ai_enabled")
+  handoffReason  String?        @map("handoff_reason")
+  metadata       Json?
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  messages       Message[]
+  toolCalls      ToolCall[]
+
+  @@index([phone])
+  @@index([externalConvId])
+  @@map("v2_conversations")
+}
+
+model Message {
+  id              String       @id @default(cuid())
+  conversationId  String       @map("conversation_id")
+  role            String       // user | assistant | system | tool
+  content         String       @db.Text
+  providerMsgId   String?      @unique @map("provider_msg_id")
+  attachments     Json?
+  metadata        Json?
+  createdAt       DateTime     @default(now()) @map("created_at")
+
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@map("v2_messages")
+}
+
+model ToolCall {
+  id              String       @id @default(cuid())
+  conversationId  String       @map("conversation_id")
+  toolName        String       @map("tool_name")
+  input           Json
+  output          Json?
+  status          String       // pending | running | success | error
+  error           String?      @db.Text
+  startedAt       DateTime     @default(now()) @map("started_at")
+  finishedAt      DateTime?    @map("finished_at")
+
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([status])
+  @@map("v2_tool_calls")
+}
+
+model KbDocument {
+  id          String     @id @default(cuid())
+  title       String
+  source      String?
+  metadata    Json?
+  createdAt   DateTime   @default(now()) @map("created_at")
+
+  chunks      KbChunk[]
+
+  @@map("v2_kb_documents")
+}
+
+model KbChunk {
+  id           String     @id @default(cuid())
+  documentId   String     @map("document_id")
+  content      String     @db.Text
+  embedding    Unsupported("vector(768)")?
+  ord          Int
+  metadata     Json?
+
+  document     KbDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@map("v2_kb_chunks")
+}
+
+model HumanFeedback {
+  id              String   @id @default(cuid())
+  messageId       String?  @map("message_id")
+  rating          Int      // -1 | 0 | +1
+  reviewer        String?
+  note            String?  @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@map("v2_human_feedback")
+}
