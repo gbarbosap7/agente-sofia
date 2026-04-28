@@ -15,11 +15,31 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+model Agent {
+  id            String         @id @default(cuid())
+  slug          String         @unique             // sofia | brian | ana
+  name          String                              // display: "Sofia"
+  channel       String                              // datacrazy | evolution
+  channelConfig Json           @map("channel_config") // { dcToken?, evoInstance?, evoApiKey? }
+  systemPrompt  String         @db.Text @map("system_prompt")
+  enabledTools  String[]       @map("enabled_tools") // ["extract_cpf","consult_joinbank",...]
+  enabled       Boolean        @default(true)
+  metadata      Json?
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+
+  conversations Conversation[]
+  kbDocuments   KbDocument[]
+
+  @@map("v2_agents")
+}
+
 model Conversation {
   id             String         @id @default(cuid())
-  channel        String         // "datacrazy"
+  agentId        String         @map("agent_id")
+  channel        String         // "datacrazy" | "evolution"
   externalConvId String?        @map("external_conv_id")
-  phone          String         @unique
+  phone          String
   contactName    String?        @map("contact_name")
   leadId         String?        @map("lead_id")
   state          String         @default("active")     // active | paused | closed
@@ -29,11 +49,14 @@ model Conversation {
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt @map("updated_at")
 
+  agent          Agent          @relation(fields: [agentId], references: [id], onDelete: Cascade)
   messages       Message[]
   toolCalls      ToolCall[]
 
+  @@unique([agentId, phone])
   @@index([phone])
   @@index([externalConvId])
+  @@index([agentId])
   @@map("v2_conversations")
 }
 
@@ -73,15 +96,18 @@ model ToolCall {
 
 model KbDocument {
   id          String     @id @default(cuid())
+  agentId     String?    @map("agent_id")           // null = compartilhado entre todos os agentes
   title       String
   source      String?
-  audience    String     @default("client")  // client | internal
+  audience    String     @default("client")          // client | internal
   metadata    Json?
   createdAt   DateTime   @default(now()) @map("created_at")
 
+  agent       Agent?     @relation(fields: [agentId], references: [id], onDelete: Cascade)
   chunks      KbChunk[]
 
   @@index([audience])
+  @@index([agentId])
   @@map("v2_kb_documents")
 }
 

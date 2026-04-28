@@ -155,9 +155,10 @@ export function startWorkers() {
         }));
         return;
       }
+      const agent = await prisma.agent.findUnique({ where: { id: conv.agentId } });
+      if (!agent || !agent.enabled) return;
 
       // injeta nota como mensagem "system" sintetica via metadata extra do turno
-      // (mantemos persistencia atraves de uma message role=system pra rastreabilidade)
       await prisma.message.create({
         data: {
           conversationId: conv.id,
@@ -167,7 +168,7 @@ export function startWorkers() {
         },
       });
 
-      const turn = await runTurn(conv);
+      const turn = await runTurn(agent, conv);
       if (turn.reply && conv.externalConvId) {
         try {
           await dc.sendMessage({ conversationId: conv.externalConvId, text: turn.reply });

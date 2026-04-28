@@ -1,4 +1,4 @@
-import { Prisma, type Conversation } from "@prisma/client";
+import { Prisma, type Agent, type Conversation } from "@prisma/client";
 import { prisma } from "./prisma";
 import { joinbank } from "./joinbank";
 import { alertOwner } from "./evolution";
@@ -22,6 +22,7 @@ async function enqueueSignaturePoll(data: { conversationId: string; contractId: 
  */
 
 export interface ToolCtx {
+  agent: Agent;
   conversation: Conversation;
 }
 
@@ -264,9 +265,9 @@ const rag_search: ToolDef = {
       required: ["query"],
     },
   },
-  async execute(args) {
+  async execute(args, { agent }) {
     const k = Math.max(1, Math.min(6, Number(args.top_k ?? 4)));
-    const hits = await searchRag(String(args.query), k);
+    const hits = await searchRag(String(args.query), k, "client", agent.id);
     return {
       results: hits.map((h) => ({
         title: h.documentTitle,

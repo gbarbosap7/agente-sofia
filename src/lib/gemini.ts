@@ -5,11 +5,10 @@ import {
   type FunctionDeclaration,
   type Part,
 } from "@google/genai";
-import { Prisma, type Conversation } from "@prisma/client";
+import { Prisma, type Agent, type Conversation } from "@prisma/client";
 import { env } from "./env";
 import { prisma } from "./prisma";
 import { getDeclarations, runTool } from "./tools";
-import { getSetting, DEFAULT_SYSTEM_PROMPT } from "./settings";
 
 let _client: GoogleGenAI | null = null;
 function client(): GoogleGenAI {
@@ -20,12 +19,6 @@ function client(): GoogleGenAI {
 const MAX_TOOL_ITER = 5;
 const HISTORY_LIMIT = 30;
 
-/**
- * Constroi o array de contents pra Gemini a partir do historico DB.
- * - role "user" → "user"
- * - role "assistant" → "model"
- * - role "tool"/"system" sao ignorados aqui (tool ja vai inline na iteracao)
- */
 async function buildHistory(conversationId: string): Promise<Content[]> {
   const msgs = await prisma.message.findMany({
     where: { conversationId, role: { in: ["user", "assistant"] } },
@@ -45,26 +38,24 @@ function buildContextPrefix(conversation: Conversation): string {
   lines.push(`- phone: ${conversation.phone}`);
   if (conversation.contactName) lines.push(`- nome: ${conversation.contactName}`);
   if (meta.cpf) lines.push(`- cpf: ${meta.cpf}`);
-  if (meta.simulation) {
-    lines.push(`- simulacao: ${JSON.stringify(meta.simulation)}`);
-  }
+  if (meta.simulation) lines.push(`- simulacao: ${JSON.stringify(meta.simulation)}`);
   if (meta.signatureUrl) lines.push(`- link assinatura: ${meta.signatureUrl}`);
   return lines.join("\n");
 }
 
 /**
- * Roda um turno completo: usa o historico + tool calls em loop ate
- * o modelo retornar texto puro. Retorna a resposta final pra enviar
- * pro cliente. Persiste msg do assistente em v2_messages.
+ * Roda um turno completo. Multi-agent: usa agent.systemPrompt + filtro de
+ * tools por agent.enabledTools.
  */
-export async function runTurn(conversation: Conversation): Promise<{
-  reply: string | null;
-  toolsRun: string[];
-}> {
-  const systemPrompt = await getSetting("system_prompt", DEFAULT_SYSTEM_PROMPT);
+export async function runTurn(
+  agent: Agent,
+  conversation: Conversation,
+): Promise<{ reply: string | null; toolsRun: string[] }> {
   const ctxPrefix = buildContextPrefix(conversation);
   const history = await buildHistory(conversation.id);
   const toolsRun: string[] = [];
+  const allowedTools = new Set(agent.enabledTools);
+  const declarations = getDeclarations().filter((d) => allowedTools.has(d.name));
 
   const contents: Content[] = [...history];
 
@@ -73,21 +64,15 @@ export async function runTurn(conversation: Conversation): Promise<{
       model: env.GEMINI_MODEL,
       contents,
       config: {
-        systemInstruction: `${systemPrompt}\n\n---\n${ctxPrefix}`,
+        systemInstruction: `${agent.systemPrompt}\n\n---\n${ctxPrefix}`,
         temperature: 0.6,
-        // desabilita thinking mode pra evitar exigencia de thought_signature
-        // ao reenviar functionCalls (gemini 2.5+).
         thinkingConfig: { thinkingBudget: 0 },
-        tools: [
-          {
-            functionDeclarations: getDeclarations() as unknown as FunctionDeclaration[],
-          },
-        ],
+        tools: declarations.length
+          ? [{ functionDeclarations: declarations as unknown as FunctionDeclaration[] }]
+          : undefined,
       },
     });
 
-    // capturamos os parts originais do candidate pra preservar
-    // thoughtSignature (gemini 2.5+ exige re-envio integral).
     const modelParts: Part[] = res.candidates?.[0]?.content?.parts ?? [];
     const calls: FunctionCall[] = modelParts
       .map((p) => p.functionCall)
@@ -96,14 +81,13 @@ export async function runTurn(conversation: Conversation): Promise<{
     if (calls.length === 0) {
       const text = (res.text ?? "").trim();
       if (!text) return { reply: null, toolsRun };
-
-      // persiste e retorna
       await prisma.message.create({
         data: {
           conversationId: conversation.id,
           role: "assistant",
           content: text,
           metadata: {
+            agentSlug: agent.slug,
             model: env.GEMINI_MODEL,
             toolsRun,
           } as Prisma.InputJsonValue,
@@ -112,17 +96,31 @@ export async function runTurn(conversation: Conversation): Promise<{
       return { reply: text, toolsRun };
     }
 
-    // re-empurra os parts originais do model — preserva thoughtSignature,
-    // que e exigido pelo gemini 2.5+ pra continuidade de tool turns.
     contents.push({ role: "model", parts: modelParts });
 
-    // executa tools em sequencia e adiciona functionResponses
     const responses: Content[] = [];
     for (const c of calls) {
       const name = c.name ?? "";
       const args = (c.args ?? {}) as Record<string, unknown>;
+
+      // Bloqueio: se a tool nao esta habilitada pra esse agente, retorna erro
+      if (!allowedTools.has(name)) {
+        responses.push({
+          role: "user",
+          parts: [
+            {
+              functionResponse: {
+                name,
+                response: { error: `tool_disabled_for_agent:${agent.slug}` },
+              },
+            },
+          ],
+        });
+        continue;
+      }
+
       toolsRun.push(name);
-      const result = await runTool(name, args, { conversation });
+      const result = await runTool(name, args, { agent, conversation });
       responses.push({
         role: "user",
         parts: [
@@ -140,6 +138,5 @@ export async function runTurn(conversation: Conversation): Promise<{
     contents.push(...responses);
   }
 
-  // safeguard — passou do limite de iteracoes
   return { reply: null, toolsRun };
 }

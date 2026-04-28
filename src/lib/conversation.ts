@@ -1,18 +1,22 @@
 import { Prisma, type Conversation, type Message } from "@prisma/client";
 import { prisma } from "./prisma";
-import type { InboundMessage } from "@/channels/datacrazy/types";
+import type { InboundMessage } from "./inbound";
 
 /**
- * Conversation Service
+ * Conversation Service (multi-agent).
  *
- * Phone é canonical (não conv_id, que muda quando DC transbordando dept).
- * Race-safe via try-create + fallback-to-find no P2002 (unique violation).
+ * Unique key: (agentId, phone). Mesmo phone pode existir em agentes
+ * diferentes — cada agente tem sua propria conversa.
  */
 
-export async function ensureConversation(input: InboundMessage): Promise<Conversation> {
+export async function ensureConversation(
+  agentId: string,
+  input: InboundMessage,
+): Promise<Conversation> {
   try {
     return await prisma.conversation.create({
       data: {
+        agentId,
         channel: input.channel,
         phone: input.phone,
         externalConvId: input.externalConvId,
@@ -22,8 +26,9 @@ export async function ensureConversation(input: InboundMessage): Promise<Convers
     });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-      // Já existe — atualiza external_conv_id se mudou
-      const existing = await prisma.conversation.findUnique({ where: { phone: input.phone } });
+      const existing = await prisma.conversation.findUnique({
+        where: { agentId_phone: { agentId, phone: input.phone } },
+      });
       if (!existing) throw err;
       if (existing.externalConvId !== input.externalConvId) {
         return await prisma.conversation.update({
@@ -45,7 +50,9 @@ export async function dedupAndPersistInbound(
   input: InboundMessage,
   conversation: Conversation,
 ): Promise<{ message: Message; isDuplicate: boolean }> {
-  const existing = await prisma.message.findUnique({ where: { providerMsgId: input.providerMsgId } });
+  const existing = await prisma.message.findUnique({
+    where: { providerMsgId: input.providerMsgId },
+  });
   if (existing) return { message: existing, isDuplicate: true };
 
   try {
@@ -62,7 +69,9 @@ export async function dedupAndPersistInbound(
     return { message, isDuplicate: false };
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-      const dup = await prisma.message.findUnique({ where: { providerMsgId: input.providerMsgId } });
+      const dup = await prisma.message.findUnique({
+        where: { providerMsgId: input.providerMsgId },
+      });
       if (dup) return { message: dup, isDuplicate: true };
     }
     throw err;
