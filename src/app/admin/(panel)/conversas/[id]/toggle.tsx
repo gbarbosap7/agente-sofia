@@ -2,6 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { Power } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 export function ToggleAi({
   id,
@@ -28,25 +31,23 @@ export function ToggleAi({
   }
 
   return (
-    <div className="flex flex-col items-end gap-2">
-      <div className="text-xs uppercase tracking-wide text-zinc-500">ia</div>
-      <button
+    <div className="flex flex-col items-end gap-2 min-w-48">
+      <span className="text-xs uppercase tracking-wide text-muted-foreground">IA</span>
+      <Button
         onClick={toggle}
         disabled={pending}
-        className={`px-4 py-1.5 rounded-md text-sm font-medium transition disabled:opacity-50 ${
-          aiEnabled
-            ? "bg-[#a3ff5c] text-zinc-950 hover:opacity-90"
-            : "bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100"
-        }`}
+        variant={aiEnabled ? "default" : "outline"}
+        size="sm"
       >
-        {aiEnabled ? "● on" : "○ off"}
-      </button>
+        <Power className="h-3.5 w-3.5" />
+        {aiEnabled ? "Desligar IA" : "Reativar IA"}
+      </Button>
       {aiEnabled && (
-        <input
+        <Input
           value={r}
           onChange={(e) => setR(e.target.value)}
-          placeholder="motivo handoff (ao desligar)"
-          className="text-xs px-2 py-1 rounded-md bg-zinc-900 border border-zinc-800 w-48 focus:border-[#a3ff5c] focus:outline-none"
+          placeholder="motivo do handoff (opcional)"
+          className="text-xs h-8"
         />
       )}
     </div>

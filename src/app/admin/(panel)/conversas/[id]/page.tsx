@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ChevronLeft } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { ToggleAi } from "./toggle";
+import { cn } from "@/lib/cn";
 
 export const dynamic = "force-dynamic";
 
@@ -16,60 +20,63 @@ export default async function ConversaDetail({ params }: { params: Promise<{ id:
   if (!conv) notFound();
 
   return (
-    <div className="max-w-4xl space-y-6">
-      <Link href="/admin/conversas" className="text-zinc-500 text-xs hover:text-zinc-300">
-        ← voltar
+    <div className="space-y-6">
+      <Link
+        href="/admin/conversas"
+        className="inline-flex items-center gap-1 text-muted-foreground text-xs hover:text-foreground"
+      >
+        <ChevronLeft className="h-3.5 w-3.5" /> voltar
       </Link>
 
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">
-            {conv.contactName ?? <span className="text-zinc-500">(sem nome)</span>}
-          </h1>
-          <div className="text-zinc-500 text-sm mt-1 font-mono">{conv.phone}</div>
-          <div className="text-zinc-600 text-xs mt-2">
-            channel <span className="text-zinc-400">{conv.channel}</span>
-            {conv.externalConvId && (
-              <>
-                {" · "}
-                ext_conv <span className="text-zinc-400">{conv.externalConvId.slice(0, 12)}…</span>
-              </>
-            )}
-            {conv.leadId && (
-              <>
-                {" · "}
-                lead <span className="text-zinc-400">{conv.leadId}</span>
-              </>
-            )}
+      <Card>
+        <CardContent className="flex items-start justify-between p-5">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">
+              {conv.contactName ?? <span className="text-muted-foreground">(sem nome)</span>}
+            </h1>
+            <div className="text-muted-foreground text-sm mt-1 font-mono">{conv.phone}</div>
+            <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+              <Badge variant="outline">{conv.channel}</Badge>
+              <span>·</span>
+              <Badge variant={conv.aiEnabled ? "accent" : "default"}>
+                {conv.aiEnabled ? "ia on" : "ia off"}
+              </Badge>
+              {conv.handoffReason && <span>· motivo: {conv.handoffReason}</span>}
+              {conv.leadId && (
+                <>
+                  <span>·</span>
+                  <span>lead {conv.leadId}</span>
+                </>
+              )}
+            </div>
           </div>
-        </div>
-
-        <ToggleAi id={conv.id} aiEnabled={conv.aiEnabled} reason={conv.handoffReason} />
-      </div>
+          <ToggleAi id={conv.id} aiEnabled={conv.aiEnabled} reason={conv.handoffReason} />
+        </CardContent>
+      </Card>
 
       <div className="space-y-3">
         {conv.messages.length === 0 && (
-          <div className="text-zinc-500 text-sm">sem mensagens.</div>
+          <div className="text-muted-foreground text-sm text-center py-8">
+            sem mensagens.
+          </div>
         )}
         {conv.messages.map((m) => {
           const isUser = m.role === "user";
           const isAssistant = m.role === "assistant";
-          const isTool = m.role === "tool";
           return (
-            <div key={m.id} className={`flex ${isUser ? "justify-start" : "justify-end"}`}>
+            <div key={m.id} className={cn("flex", isUser ? "justify-start" : "justify-end")}>
               <div
-                className={`max-w-[75%] rounded-lg px-4 py-2 text-sm ${
+                className={cn(
+                  "max-w-[75%] rounded-lg px-4 py-2 text-sm border",
                   isUser
-                    ? "bg-zinc-900 border border-zinc-800"
+                    ? "bg-card border-border"
                     : isAssistant
-                      ? "bg-[#a3ff5c]/10 border border-[#a3ff5c]/30 text-zinc-100"
-                      : "bg-zinc-950 border border-zinc-800 text-zinc-500 font-mono text-xs"
-                }`}
+                      ? "bg-accent/10 border-accent/30 text-foreground"
+                      : "bg-muted/30 border-border text-muted-foreground font-mono text-xs",
+                )}
               >
-                <div className="text-zinc-500 text-[10px] uppercase tracking-wide mb-1">
-                  {m.role}
-                  {" · "}
-                  {new Date(m.createdAt).toLocaleString("pt-BR")}
+                <div className="text-muted-foreground text-[10px] uppercase tracking-wide mb-1">
+                  {m.role} · {new Date(m.createdAt).toLocaleString("pt-BR")}
                 </div>
                 <div className="whitespace-pre-wrap">{m.content}</div>
               </div>

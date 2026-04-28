@@ -1,6 +1,9 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { Save, RotateCcw, Check } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/input";
 
 export function PromptEditor({ initial, fallback }: { initial: string; fallback: string }) {
   const [text, setText] = useState(initial);
@@ -33,29 +36,28 @@ export function PromptEditor({ initial, fallback }: { initial: string; fallback:
 
   return (
     <div className="space-y-3">
-      <textarea
+      <Textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
-        className="w-full h-[60vh] px-4 py-3 rounded-lg bg-zinc-900 border border-zinc-800 focus:border-[#a3ff5c] focus:outline-none text-sm font-mono leading-relaxed"
+        className="h-[60vh] font-mono text-sm leading-relaxed"
         spellCheck={false}
       />
       <div className="flex items-center gap-3">
-        <button
-          onClick={save}
-          disabled={pending}
-          className="px-4 py-1.5 rounded-md bg-[#a3ff5c] text-zinc-950 text-sm font-medium hover:opacity-90 disabled:opacity-50"
-        >
-          {pending ? "salvando…" : "salvar"}
-        </button>
-        <button
-          onClick={reset}
-          className="px-4 py-1.5 rounded-md border border-zinc-800 text-zinc-400 text-sm hover:text-zinc-100"
-        >
-          restaurar padrao
-        </button>
-        {saved && <span className="text-[#a3ff5c] text-xs">✓ salvo</span>}
-        {err && <span className="text-red-400 text-xs">{err}</span>}
-        <span className="text-zinc-600 text-xs ml-auto">{text.length} chars</span>
+        <Button onClick={save} disabled={pending}>
+          <Save className="h-4 w-4" />
+          {pending ? "salvando…" : "Salvar"}
+        </Button>
+        <Button onClick={reset} variant="outline">
+          <RotateCcw className="h-4 w-4" />
+          Restaurar padrão
+        </Button>
+        {saved && (
+          <span className="text-accent text-xs flex items-center gap-1">
+            <Check className="h-3.5 w-3.5" /> salvo
+          </span>
+        )}
+        {err && <span className="text-destructive text-xs">{err}</span>}
+        <span className="text-muted-foreground text-xs ml-auto">{text.length} chars</span>
       </div>
     </div>
   );

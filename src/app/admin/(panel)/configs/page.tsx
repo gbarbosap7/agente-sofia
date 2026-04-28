@@ -1,4 +1,5 @@
 import { env } from "@/lib/env";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const dynamic = "force-dynamic";
 
@@ -43,45 +44,50 @@ export default function ConfigsPage() {
   const e = env as Record<string, string | undefined>;
 
   return (
-    <div className="max-w-4xl space-y-6">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">configs</h1>
-        <p className="text-zinc-500 text-sm mt-1">
-          variaveis de ambiente. Edicao via Easypanel UI ou tRPC.
+        <h1 className="text-3xl font-bold tracking-tight">Configurações</h1>
+        <p className="text-muted-foreground text-sm mt-1">
+          Variáveis de ambiente atuais. Edição via Easypanel ou tRPC.
         </p>
       </div>
 
-      <Section title="basico">
-        {SAFE_KEYS.map((k) => (
-          <Row key={k} k={k} v={e[k] ?? "—"} />
-        ))}
-      </Section>
+      <Card>
+        <CardHeader>
+          <CardTitle>Básico</CardTitle>
+          <CardDescription>Valores não-sensíveis</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="divide-y divide-border">
+            {SAFE_KEYS.map((k) => (
+              <Row key={k} k={k} v={e[k] ?? "—"} />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
-      <Section title="secrets (mascarados)">
-        {MASKED_KEYS.map((k) => (
-          <Row key={k} k={k} v={mask(e[k])} mono />
-        ))}
-      </Section>
-    </div>
-  );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <h2 className="text-xs uppercase tracking-wide text-zinc-500 mb-2">{title}</h2>
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 divide-y divide-zinc-900">
-        {children}
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Secrets</CardTitle>
+          <CardDescription>Mascarados — primeiro/últimos 4 chars apenas</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="divide-y divide-border">
+            {MASKED_KEYS.map((k) => (
+              <Row key={k} k={k} v={mask(e[k])} mono />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
 function Row({ k, v, mono = false }: { k: string; v: string; mono?: boolean }) {
   return (
-    <div className="flex items-center justify-between px-4 py-2 text-sm">
-      <span className="text-zinc-400 font-mono text-xs">{k}</span>
-      <span className={mono ? "text-zinc-200 font-mono text-xs" : "text-zinc-200"}>{v}</span>
+    <div className="flex items-center justify-between px-5 py-2.5 text-sm">
+      <span className="text-muted-foreground font-mono text-xs">{k}</span>
+      <span className={mono ? "text-foreground font-mono text-xs" : "text-foreground"}>{v}</span>
     </div>
   );
 }

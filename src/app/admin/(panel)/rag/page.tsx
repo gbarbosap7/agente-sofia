@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { RagUploader } from "./uploader";
 import { DeleteDocButton } from "./delete-button";
 
@@ -16,57 +18,56 @@ export default async function RagPage() {
   const m = new Map(counts.map((c) => [c.documentId, c._count._all]));
 
   return (
-    <div className="max-w-4xl space-y-6">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">rag · base de conhecimento</h1>
-        <p className="text-zinc-500 text-sm mt-1">
-          documentos indexados (Gemini embeddings 768d, HNSW). A tool{" "}
-          <code className="text-[#a3ff5c] font-mono">rag_search</code> busca aqui durante a conversa.
+        <h1 className="text-3xl font-bold tracking-tight">Tools / RAG</h1>
+        <p className="text-muted-foreground text-sm mt-1">
+          Documentos indexados (Gemini embeddings 768d, HNSW). A tool{" "}
+          <code className="text-accent">rag_search</code> busca aqui durante a conversa.
         </p>
       </div>
 
       <RagUploader />
 
-      <div>
-        <h2 className="text-xs uppercase tracking-wide text-zinc-500 mb-2">
-          documentos ({docs.length})
-        </h2>
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 divide-y divide-zinc-900">
+      <Card>
+        <CardHeader>
+          <CardTitle>Documentos ({docs.length})</CardTitle>
+          <CardDescription>
+            <Badge variant="accent">client</Badge> = Sofia pode usar ·{" "}
+            <Badge variant="warn">internal</Badge> = oculto da Sofia
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
           {docs.length === 0 ? (
-            <div className="p-4 text-zinc-500 text-sm">nenhum documento ainda.</div>
+            <div className="px-5 py-6 text-muted-foreground text-sm">
+              Nenhum documento ainda. Suba um no formulário acima.
+            </div>
           ) : (
-            docs.map((d) => (
-              <div
-                key={d.id}
-                className="flex items-center justify-between px-4 py-2 text-sm"
-              >
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-zinc-100">{d.title}</span>
-                    <span
-                      className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
-                        d.audience === "internal"
-                          ? "bg-amber-500/15 text-amber-400 border border-amber-500/30"
-                          : "bg-zinc-800/50 text-zinc-400 border border-zinc-700"
-                      }`}
-                    >
-                      {d.audience}
-                    </span>
+            <div className="divide-y divide-border">
+              {docs.map((d) => (
+                <div key={d.id} className="flex items-center justify-between px-5 py-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-foreground font-medium">{d.title}</span>
+                      <Badge variant={d.audience === "internal" ? "warn" : "accent"}>
+                        {d.audience}
+                      </Badge>
+                    </div>
+                    <div className="text-muted-foreground text-xs mt-0.5">
+                      {d.source && <span className="mr-3">{d.source}</span>}
+                      <span>{m.get(d.id) ?? 0} chunks</span>
+                      <span className="ml-3">
+                        {new Date(d.createdAt).toLocaleString("pt-BR")}
+                      </span>
+                    </div>
                   </div>
-                  <div className="text-zinc-500 text-xs mt-0.5">
-                    {d.source && <span className="mr-3">{d.source}</span>}
-                    <span>{m.get(d.id) ?? 0} chunks</span>
-                    <span className="ml-3">
-                      {new Date(d.createdAt).toLocaleString("pt-BR")}
-                    </span>
-                  </div>
+                  <DeleteDocButton id={d.id} />
                 </div>
-                <DeleteDocButton id={d.id} />
-              </div>
-            ))
+              ))}
+            </div>
           )}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
