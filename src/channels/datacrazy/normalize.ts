@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { DcWebhookPayload, InboundMessage } from "./types";
+import type { DcWebhookPayload } from "./types";
+import type { InboundMessage } from "@/lib/inbound";
 
 const dcPayloadSchema = z.object({
   conv_id: z.string().min(1),
@@ -27,13 +28,12 @@ export function normalizeDcPayload(raw: unknown): InboundMessage {
     channel: "datacrazy",
     externalConvId: data.conv_id,
     phone: normalizePhone(data.phone),
-    leadId: data.lead_id,
-    contactName: data.contact_name,
+    leadId: data.lead_id ?? null,
+    contactName: data.contact_name ?? null,
     text: (data.message_text ?? "").trim(),
     providerMsgId,
-    messageType: (data.message_type as InboundMessage["messageType"]) ?? "text",
-    timestamp: data.timestamp ? new Date(data.timestamp) : new Date(),
-    raw: data,
+    messageType: data.message_type ?? "text",
+    timestamp: data.timestamp ?? new Date().toISOString(),
   };
 
   if (data.attachment_url) {
