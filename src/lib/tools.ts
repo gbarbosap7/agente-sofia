@@ -3,6 +3,7 @@ import { prisma } from "./prisma";
 import { joinbank } from "./joinbank";
 import { alertOwner } from "./evolution";
 import { dc } from "@/channels/datacrazy/client";
+import { searchRag } from "./rag";
 
 // import lazy de queue pra evitar ciclo (queue → gemini → tools)
 async function enqueueSignaturePoll(data: { conversationId: string; contractId: string }) {
@@ -246,6 +247,36 @@ const alert_owner: ToolDef = {
   },
 };
 
+// =====================================================================
+// rag_search — busca na base de conhecimento (PDF/MD ingeridos)
+// =====================================================================
+const rag_search: ToolDef = {
+  declaration: {
+    name: "rag_search",
+    description:
+      "Busca trechos relevantes na base de conhecimento (politicas, FAQ, comissionamento). Use quando o cliente perguntar algo que pode estar em documento interno.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "consulta livre em portugues" },
+        top_k: { type: "number", description: "quantos trechos retornar (1-6)" },
+      },
+      required: ["query"],
+    },
+  },
+  async execute(args) {
+    const k = Math.max(1, Math.min(6, Number(args.top_k ?? 4)));
+    const hits = await searchRag(String(args.query), k);
+    return {
+      results: hits.map((h) => ({
+        title: h.documentTitle,
+        content: h.content,
+        similarity: Number(h.similarity.toFixed(3)),
+      })),
+    };
+  },
+};
+
 export const TOOLS: Record<string, ToolDef> = {
   extract_cpf,
   consult_joinbank,
@@ -253,6 +284,7 @@ export const TOOLS: Record<string, ToolDef> = {
   transfer_human,
   finish_conversation,
   alert_owner,
+  rag_search,
 };
 
 export function getDeclarations() {
