@@ -35,7 +35,17 @@ export async function POST(req: NextRequest) {
   const hash = createHash("sha256").update(password).digest("hex");
   const expectedHash = env.ADMIN_PASSWORD_HASH;
 
-  if (expectedHash) {
+  if (!expectedHash) {
+    // Produção sem hash configurado = bloqueado por segurança
+    if (process.env.NODE_ENV === "production") {
+      console.error(JSON.stringify({ event: "admin.login.no_hash_in_prod" }));
+      return NextResponse.json(
+        { ok: false, error: "painel não configurado — defina ADMIN_PASSWORD_HASH" },
+        { status: 503 },
+      );
+    }
+    // Dev/test: aceita qualquer senha (modo bootstrap)
+  } else {
     try {
       const a = Buffer.from(hash, "hex");
       const b = Buffer.from(expectedHash, "hex");
@@ -46,7 +56,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "credenciais inválidas" }, { status: 401 });
     }
   }
-  // sem ADMIN_PASSWORD_HASH → aceita qualquer senha (modo bootstrap)
 
   await setSession(email);
   return NextResponse.json({ ok: true });

@@ -21,13 +21,14 @@ const HISTORY_LIMIT = 30;
 
 async function buildHistory(conversationId: string): Promise<Content[]> {
   const msgs = await prisma.message.findMany({
-    where: { conversationId, role: { in: ["user", "assistant"] } },
+    where: { conversationId, role: { in: ["user", "assistant", "system"] } },
     orderBy: { createdAt: "asc" },
     take: HISTORY_LIMIT,
   });
   return msgs.map<Content>((m) => ({
     role: m.role === "assistant" ? "model" : "user",
-    parts: [{ text: m.content }],
+    // Mensagens system (ex: "cliente assinou") chegam ao Gemini como contexto user
+    parts: [{ text: m.role === "system" ? `[Sistema]: ${m.content}` : m.content }],
   }));
 }
 

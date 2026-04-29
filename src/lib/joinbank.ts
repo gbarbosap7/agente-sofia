@@ -44,6 +44,7 @@ async function jb<T>(path: string, init: RequestInit & { json?: unknown } = {}):
   const { json, headers, ...rest } = init;
   const res = await fetch(`${env.JOINBANK_BASE_URL}${path}`, {
     ...rest,
+    signal: AbortSignal.timeout(15_000),
     headers: {
       Authorization: `Bearer ${env.JOINBANK_KEY}`,
       "Content-Type": "application/json",

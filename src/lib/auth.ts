@@ -10,7 +10,14 @@ const COOKIE = "sofia_admin";
 const TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 dias
 
 function secret(): string {
-  return process.env.SESSION_SECRET || "dev-secret-change-me-in-prod-please";
+  const s = process.env.SESSION_SECRET;
+  if (!s || s === "dev-secret-change-me-in-prod-please") {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("SESSION_SECRET não definido — configure a variável de ambiente em produção");
+    }
+    return "dev-secret-change-me-in-prod-please";
+  }
+  return s;
 }
 
 function bytesToHex(buf: ArrayBuffer): string {

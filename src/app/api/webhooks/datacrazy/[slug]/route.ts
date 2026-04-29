@@ -6,6 +6,9 @@ import { withLock } from "@/lib/redis";
 import { runTurn } from "@/lib/gemini";
 import { loadAgent } from "@/lib/agent";
 import { transcribeAudio } from "@/lib/transcribe";
+import { verifyWebhookBearer } from "@/lib/webhook-auth";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { env } from "@/lib/env";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,6 +27,11 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: string }> }) {
   const { slug } = await ctx.params;
+
+  // Auth — Bearer token (DC_WEBHOOK_SECRET). Passa se secret não configurado (dev).
+  if (!verifyWebhookBearer(req, env.DC_WEBHOOK_SECRET)) {
+    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  }
 
   let agent;
   try {
@@ -59,6 +67,17 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
       raw,
     }));
     return NextResponse.json({ ok: false, error: "invalid_payload" }, { status: 400 });
+  }
+
+  // Rate limit por phone (30 req/min)
+  const rl = await checkRateLimit(normalized.phone);
+  if (!rl.allowed) {
+    console.warn(JSON.stringify({
+      event: "dc.webhook.rate_limited",
+      agent: slug,
+      phone: normalized.phone,
+    }));
+    return NextResponse.json({ ok: false, error: "rate_limited" }, { status: 429 });
   }
 
   // Transcrição de áudio (Gemini) — roda fora do lock pra nao segurar a fila.

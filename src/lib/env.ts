@@ -19,6 +19,7 @@ const schema = z.object({
   DC_BASE_URL: z.string().url().default("https://api.g1.datacrazy.io/api/v1"),
   DC_TOKEN: z.string().min(20),
   DC_WEBHOOK_SECRET: z.string().optional(),
+  EVO_WEBHOOK_SECRET: z.string().optional(),
 
   JOINBANK_BASE_URL: z.string().url().default("https://integration.ajin.io"),
   JOINBANK_KEY: z.string().min(20),

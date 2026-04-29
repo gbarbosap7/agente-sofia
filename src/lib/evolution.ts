@@ -21,6 +21,7 @@ export async function sendEvoMessage(opts: {
   try {
     const res = await fetch(`${baseUrl}/message/sendText/${instance}`, {
       method: "POST",
+      signal: AbortSignal.timeout(15_000),
       headers: {
         "Content-Type": "application/json",
         apikey: apiKey,
@@ -60,6 +61,7 @@ export async function downloadEvoAudio(opts: {
 
   const res = await fetch(`${baseUrl}/chat/getBase64FromMediaMessage/${instance}`, {
     method: "POST",
+    signal: AbortSignal.timeout(30_000), // áudio pode ser grande
     headers: {
       "Content-Type": "application/json",
       apikey: apiKey,

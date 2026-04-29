@@ -6,6 +6,9 @@ import { withLock } from "@/lib/redis";
 import { runTurn } from "@/lib/gemini";
 import { loadAgent, getChannelConfig } from "@/lib/agent";
 import { transcribeAudioBase64 } from "@/lib/transcribe";
+import { verifyWebhookBearer } from "@/lib/webhook-auth";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { env } from "@/lib/env";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +26,11 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: string }> }) {
   const { slug } = await ctx.params;
+
+  // Auth — Bearer token (EVO_WEBHOOK_SECRET). Passa se secret não configurado (dev).
+  if (!verifyWebhookBearer(req, env.EVO_WEBHOOK_SECRET)) {
+    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  }
 
   let agent;
   try {
@@ -70,6 +78,17 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
   }
 
   const cfg = getChannelConfig(agent);
+
+  // Rate limit por phone (30 req/min)
+  const rl = await checkRateLimit(normalized.phone);
+  if (!rl.allowed) {
+    console.warn(JSON.stringify({
+      event: "evo.webhook.rate_limited",
+      agent: slug,
+      phone: normalized.phone,
+    }));
+    return NextResponse.json({ ok: false, error: "rate_limited" }, { status: 429 });
+  }
 
   // Transcrição de áudio (Gemini) — fora do lock para não segurar a fila.
   if (normalized.messageType === "audio") {

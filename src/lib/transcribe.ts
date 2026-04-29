@@ -32,7 +32,7 @@ export type TranscribeResult = {
 async function fetchAudioAsBase64(
   url: string,
 ): Promise<{ mimeType: string; base64: string }> {
-  const r = await fetch(url, { redirect: "follow" });
+  const r = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(30_000) });
   if (!r.ok) throw new Error(`audio_fetch_failed:${r.status}`);
   const ct = r.headers.get("content-type") ?? "audio/ogg";
   const buf = Buffer.from(await r.arrayBuffer());

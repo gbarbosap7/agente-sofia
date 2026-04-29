@@ -32,6 +32,7 @@ async function dcFetch<T>(
   const { json, headers, ...rest } = init;
   const res = await fetch(`${env.DC_BASE_URL}${path}`, {
     ...rest,
+    signal: AbortSignal.timeout(15_000),
     headers: {
       Authorization: `Bearer ${env.DC_TOKEN}`,
       "Content-Type": "application/json",
