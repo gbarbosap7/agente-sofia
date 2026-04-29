@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { normalizeEvoPayload } from "@/channels/evolution/normalize";
-import { sendEvoMessage } from "@/lib/evolution";
+import { sendEvoMessage, downloadEvoAudio } from "@/lib/evolution";
 import { ensureConversation, dedupAndPersistInbound } from "@/lib/conversation";
 import { withLock } from "@/lib/redis";
 import { runTurn } from "@/lib/gemini";
 import { loadAgent, getChannelConfig } from "@/lib/agent";
+import { transcribeAudioBase64 } from "@/lib/transcribe";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -69,6 +70,35 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
   }
 
   const cfg = getChannelConfig(agent);
+
+  // Transcrição de áudio (Gemini) — fora do lock para não segurar a fila.
+  if (normalized.messageType === "audio") {
+    try {
+      const { base64, mimeType } = await downloadEvoAudio({
+        rawData: raw,
+        baseUrl: cfg.baseUrl,
+        apiKey: cfg.apiKey,
+        instance: cfg.instance,
+      });
+      const transcript = await transcribeAudioBase64(base64, mimeType);
+      console.log(JSON.stringify({
+        event: "evo.transcribe.ok",
+        agent: slug,
+        phone: normalized.phone,
+        duration_ms: transcript.durationMs,
+        inaudible: transcript.inaudible,
+        preview: transcript.text.slice(0, 80),
+      }));
+      if (!transcript.inaudible) normalized.text = transcript.text;
+    } catch (err) {
+      console.error(JSON.stringify({
+        event: "evo.transcribe.error",
+        agent: slug,
+        phone: normalized.phone,
+        error: err instanceof Error ? err.message : String(err),
+      }));
+    }
+  }
 
   const result = await withLock(`agent:${agent.id}:phone:${normalized.phone}`, 60, async () => {
     const conversation = await ensureConversation(agent.id, normalized);

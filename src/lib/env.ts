@@ -9,7 +9,11 @@ const schema = z.object({
   APP_BASE_URL: z.string().url().default("http://localhost:3000"),
 
   GOOGLE_API_KEY: z.string().min(20, "GOOGLE_API_KEY ausente"),
+  // Chave dedicada pra transcrição de áudio — separa custo do agente.
+  // Default: cai no GOOGLE_API_KEY se não definida.
+  GEMINI_API_KEY_TRANSCRIBE: z.string().optional(),
   GEMINI_MODEL: z.string().default("gemini-flash-latest"),
+  GEMINI_TRANSCRIBE_MODEL: z.string().default("gemini-2.5-flash"),
   GEMINI_EMBED_MODEL: z.string().default("gemini-embedding-001"),
 
   DC_BASE_URL: z.string().url().default("https://api.g1.datacrazy.io/api/v1"),

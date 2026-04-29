@@ -19,7 +19,12 @@ export interface EvolutionUpsertPayload {
     message?: {
       conversation?: string;           // texto simples
       extendedTextMessage?: { text: string };
-      // mídia, sticker, etc — ignoramos por enquanto
+      audioMessage?: {
+        mimetype?: string;             // "audio/ogg; codecs=opus"
+        seconds?: number;
+        ptt?: boolean;                 // push-to-talk (nota de voz)
+      };
+      // outros tipos de mídia — ignoramos
     };
     messageType?: string;              // conversation | extendedTextMessage | imageMessage | audioMessage | ...
     messageTimestamp?: number;         // unix

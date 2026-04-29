@@ -41,3 +41,42 @@ export async function sendEvoMessage(opts: {
 export async function alertOwner(text: string) {
   return sendEvoMessage({ number: env.ALERT_PHONE, text: `[sofia] ${text}` });
 }
+
+/**
+ * Baixa áudio de uma mensagem Evolution via getBase64FromMediaMessage.
+ * Retorna base64 + mimeType para passar direto ao Gemini.
+ */
+export async function downloadEvoAudio(opts: {
+  /** Objeto raw `data` do payload Evolution (key + message) */
+  rawData: unknown;
+  baseUrl?: string;
+  apiKey?: string;
+  instance?: string;
+}): Promise<{ base64: string; mimeType: string }> {
+  const apiKey = opts.apiKey ?? env.EVOLUTION_API_KEY;
+  if (!apiKey) throw new Error("no_evolution_key");
+  const baseUrl = opts.baseUrl ?? env.EVOLUTION_BASE_URL;
+  const instance = opts.instance ?? env.EVOLUTION_INSTANCE;
+
+  const res = await fetch(`${baseUrl}/chat/getBase64FromMediaMessage/${instance}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: apiKey,
+    },
+    body: JSON.stringify({ message: opts.rawData }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`evo_getBase64_failed:${res.status}:${body.slice(0, 120)}`);
+  }
+
+  const json = (await res.json()) as { base64?: string; mimetype?: string };
+  if (!json.base64) throw new Error("evo_getBase64_empty_response");
+
+  return {
+    base64: json.base64,
+    mimeType: (json.mimetype ?? "audio/ogg").split(";")[0].trim(),
+  };
+}

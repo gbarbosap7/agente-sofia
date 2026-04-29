@@ -5,6 +5,7 @@ import { ensureConversation, dedupAndPersistInbound } from "@/lib/conversation";
 import { withLock } from "@/lib/redis";
 import { runTurn } from "@/lib/gemini";
 import { loadAgent } from "@/lib/agent";
+import { transcribeAudio } from "@/lib/transcribe";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -58,6 +59,31 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
       raw,
     }));
     return NextResponse.json({ ok: false, error: "invalid_payload" }, { status: 400 });
+  }
+
+  // Transcrição de áudio (Gemini) — roda fora do lock pra nao segurar a fila.
+  let transcript: { text: string; durationMs: number; inaudible: boolean } | null = null;
+  if (normalized.messageType === "audio" && normalized.attachment?.url) {
+    try {
+      transcript = await transcribeAudio(normalized.attachment.url, normalized.attachment.mime);
+      console.log(JSON.stringify({
+        event: "dc.transcribe.ok",
+        agent: slug,
+        phone: normalized.phone,
+        duration_ms: transcript.durationMs,
+        inaudible: transcript.inaudible,
+        preview: transcript.text.slice(0, 80),
+      }));
+      if (!transcript.inaudible) normalized.text = transcript.text;
+    } catch (err) {
+      console.error(JSON.stringify({
+        event: "dc.transcribe.error",
+        agent: slug,
+        phone: normalized.phone,
+        url: normalized.attachment.url,
+        error: err instanceof Error ? err.message : String(err),
+      }));
+    }
   }
 
   const result = await withLock(`agent:${agent.id}:phone:${normalized.phone}`, 60, async () => {
