@@ -1,6 +1,6 @@
 import { Prisma, type Agent, type Conversation } from "@prisma/client";
 import { prisma } from "./prisma";
-import { joinbank } from "./joinbank";
+import { joinbank, TAXA_REF_INSS } from "./joinbank";
 import { rvx } from "./rvx";
 import { alertOwner, sendEvoMessage } from "./evolution";
 import { dc } from "@/channels/datacrazy/client";
@@ -310,20 +310,111 @@ const consult_rvx: ToolDef = {
     const cpf = onlyDigits(args.cpf);
     if (cpf.length !== 11) return { ok: false, error: "cpf_invalido" };
 
-    const sim = await rvx.simulate(cpf);
-
+    const rvxResult = await rvx.consult(cpf);
     const meta = (conversation.metadata as Record<string, unknown> | null) ?? {};
-    meta.rvxSimulation = sim;
-    if (sim.nome && !meta.name) meta.name = sim.nome;
+
+    if (!rvxResult.eligible) {
+      meta.rvxSimulation = { eligible: false, reason: rvxResult.reason };
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { metadata: meta as Prisma.InputJsonValue },
+      });
+      return { eligible: false, reason: rvxResult.reason, nome: rvxResult.nome };
+    }
+
+    // Calcula oferta JoinBank para cada emprestimo elegivel; seleciona a de maior economia
+    let bestLoan: Record<string, unknown> | null = null;
+    let bestEconomy = -Infinity;
+
+    for (const emp of rvxResult.emprestimosElegiveis) {
+      const parcelasRestantes = Number(emp.ParcelasRestantes ?? emp.Prazo ?? 60);
+      const loanValue = Number(emp.Quitacao ?? 0);
+      const currentInstallment = Number(emp.ValorParcela ?? 0);
+      const lenderCode = Number(emp.Banco ?? 0);
+      const contractNumber = String(emp.Contrato ?? "");
+      const totalTerm = Number(emp.Prazo ?? parcelasRestantes);
+
+      if (!loanValue || !currentInstallment || !lenderCode) continue;
+
+      try {
+        const calc = await joinbank.calcInss({
+          term: parcelasRestantes,
+          installmentValue: currentInstallment,
+          loanValue,
+          lenderCode,
+          contractNumber,
+          totalTerm,
+          installmentsRemaining: parcelasRestantes,
+          currentInstallment,
+          dueBalance: loanValue,
+        });
+
+        const novaParcela = calc.installmentValue ?? currentInstallment;
+        const economy = currentInstallment - novaParcela;
+
+        if (economy > bestEconomy) {
+          bestEconomy = economy;
+          bestLoan = {
+            banco: lenderCode,
+            bancoNome: emp.BancoNome ?? String(emp.Banco ?? ""),
+            contrato: contractNumber,
+            prazo: totalTerm,
+            parcelasRestantes,
+            parcelaAtual: currentInstallment,
+            saldoDevedor: loanValue,
+            taxaAtual: Number(emp.Taxa ?? 0),
+            novaParcela,
+            novaTaxa: calc.rate ?? TAXA_REF_INSS,
+            economy: Number(economy.toFixed(2)),
+          };
+        }
+      } catch {
+        // JoinBank indisponivel — registra com dados brutos do RVX
+        const economy = currentInstallment * 0.05; // estimativa conservadora de 5% reducao
+        if (economy > bestEconomy) {
+          bestEconomy = economy;
+          bestLoan = {
+            banco: lenderCode,
+            bancoNome: emp.BancoNome ?? String(emp.Banco ?? ""),
+            contrato: contractNumber,
+            prazo: totalTerm,
+            parcelasRestantes,
+            parcelaAtual: currentInstallment,
+            saldoDevedor: loanValue,
+            taxaAtual: Number(emp.Taxa ?? 0),
+            novaParcela: null,
+            novaTaxa: TAXA_REF_INSS,
+            economy: null,
+          };
+        }
+      }
+    }
+
+    const simulation = {
+      eligible: true,
+      nome: rvxResult.nome,
+      nomeCompleto: rvxResult.nomeCompleto,
+      numeroBeneficio: rvxResult.numeroBeneficio,
+      valorBeneficio: rvxResult.valorBeneficio,
+      situacaoBeneficio: rvxResult.situacaoBeneficio,
+      margemDisponivel: rvxResult.margemDisponivel,
+      bestLoan,
+      emprestimosElegiveis: rvxResult.emprestimosElegiveis,
+      phones: rvxResult.phones,
+    };
+
+    meta.rvxSimulation = simulation;
+    if (rvxResult.nome && !meta.name) meta.name = rvxResult.nome;
 
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: {
         metadata: meta as Prisma.InputJsonValue,
-        contactName: sim.nome && !conversation.contactName ? sim.nome : conversation.contactName,
+        contactName: rvxResult.nome && !conversation.contactName ? rvxResult.nome : conversation.contactName,
       },
     });
-    return sim;
+
+    return simulation;
   },
 };
 
@@ -434,44 +525,70 @@ const formalize_proposal: ToolDef = {
     }
 
     const sim = meta.rvxSimulation as Record<string, unknown> | undefined;
+    if (!sim?.eligible) return { ok: false, error: "simulacao_ausente" };
 
-    const result = await rvx.formalize({
+    const bestLoan = sim.bestLoan as Record<string, unknown> | undefined;
+    if (!bestLoan) return { ok: false, error: "sem_oferta_elegivel" };
+
+    const nome = conversation.contactName ?? String(sim.nomeCompleto ?? "");
+    const numeroBeneficio = String(sim.numeroBeneficio ?? "");
+    const valorBeneficio = Number(sim.valorBeneficio ?? 0);
+
+    const result = await joinbank.createInssSimulation({
       cpf,
-      nome: conversation.contactName ?? undefined,
-      banco: bank.banco,
-      agencia: bank.agencia,
-      conta: bank.conta,
-      valor: sim?.valor_liberado as number | undefined,
-      prazo: sim?.prazo as number | undefined,
+      nome,
+      beneficio: numeroBeneficio,
+      income: valorBeneficio,
+      phone: conversation.phone,
+      term: Number(bestLoan.parcelasRestantes ?? 60),
+      installmentValue: Number(bestLoan.novaParcela ?? bestLoan.parcelaAtual ?? 0),
+      loanValue: Number(bestLoan.saldoDevedor ?? 0),
+      lenderCode: Number(bestLoan.banco ?? 0),
+      contractNumber: String(bestLoan.contrato ?? ""),
+      totalTerm: Number(bestLoan.prazo ?? 60),
+      currentInstallment: Number(bestLoan.parcelaAtual ?? 0),
+      dueBalance: Number(bestLoan.saldoDevedor ?? 0),
+      creditBank: {
+        name: bank.banco,
+        branch: bank.agencia,
+        number: bank.conta,
+        type: bank.tipo_conta === "poupanca" ? 2 : 1,
+      },
     });
 
-    meta.propostaId = result.proposta_id;
-    meta.signatureUrl = result.link;
+    meta.propostaId = result.simId;
+    meta.signatureUrl = result.signingUrl;
+    meta.authKey = result.authKey;
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: { metadata: meta as Prisma.InputJsonValue },
     });
 
-    // Envia o link diretamente (fora da resposta de texto da IA)
-    const linkMsg = `Aqui está seu link de assinatura 👇\n${result.link}`;
-    if (conversation.channel === "evolution") {
-      const cfg = getChannelConfig(agent);
-      await sendEvoMessage({
-        number: conversation.phone,
-        text: linkMsg,
-        baseUrl: cfg.baseUrl,
-        apiKey: cfg.apiKey,
-        instance: cfg.instance,
-      }).catch(() => null);
-    } else if (conversation.externalConvId) {
-      await dc.sendMessage({ conversationId: conversation.externalConvId, text: linkMsg }).catch(() => null);
+    if (result.signingUrl) {
+      // Link ja disponivel — envia imediatamente
+      const linkMsg = `Aqui está seu link de assinatura 👇\n${result.signingUrl}`;
+      if (conversation.channel === "evolution") {
+        const cfg = getChannelConfig(agent);
+        await sendEvoMessage({
+          number: conversation.phone,
+          text: linkMsg,
+          baseUrl: cfg.baseUrl,
+          apiKey: cfg.apiKey,
+          instance: cfg.instance,
+        }).catch(() => null);
+      } else if (conversation.externalConvId) {
+        await dc.sendMessage({ conversationId: conversation.externalConvId, text: linkMsg }).catch(() => null);
+      }
+    } else {
+      // URL ainda nao pronta — agenda polling via worker
+      await enqueueSignaturePoll({ conversationId: conversation.id, contractId: result.simId });
     }
 
     await alertOwner(
-      `🎉 proposta formalizada: ${conversation.contactName ?? conversation.phone} — proposta ${result.proposta_id}`,
+      `🎉 proposta INSS formalizada: ${conversation.contactName ?? conversation.phone} — simId ${result.simId}`,
     );
 
-    return { ok: true, link: result.link, proposta_id: result.proposta_id };
+    return { ok: true, simId: result.simId, link: result.signingUrl, linkPronto: !!result.signingUrl };
   },
 };
 

@@ -1,54 +1,75 @@
-import { env } from "./env";
-
 /**
- * Cliente RVX — portabilidade consignado INSS.
+ * Cliente RVX — consulta INSS (IN100 equivalente).
  *
- * Operacoes:
- *  - simulate(cpf)       → elegibilidade + simulacao (margem, valor, parcela, taxa)
- *  - formalize(input)    → submete proposta, retorna link de assinatura
- *  - getStatus(id)       → polling de status da proposta
+ * Endpoint: POST https://api-crm-v2.rvxtech.com.br/api/consultations
+ * Body: { type: 'inss', document: cpf }
  *
- * Endpoints e campos exatos dependem do contrato RVX — ajuste conforme spec.
- * Por ora, mapeamento defensivo: nunca lanca por campo ausente.
+ * Retorna dados do beneficiário + lista de empréstimos ativos.
+ * A simulação de portabilidade é feita separadamente via JoinBank (joinbank.ts).
  */
 
-export interface RvxSimulation {
-  eligible: boolean;
+import { env } from "./env";
+
+// ─── Tipos da resposta RVX ───────────────────────────────────────────────────
+
+export interface RvxBeneficiario {
+  Nome?: string;
+  Situacao?: string;      // "Ativo" | "Suspenso" | ...
+  Nascimento?: string;
+  Sexo?: string;
+  Beneficio?: string;     // número do benefício
+  Especie?: string;
+}
+
+export interface RvxResumoFinanceiro {
+  MargemDisponivel?: number;
+  MargemTotal?: number;
+  ValorBeneficio?: number;
+}
+
+export interface RvxEmprestimo {
+  Banco?: string;              // código do banco
+  BancoNome?: string;          // nome do banco (nem sempre presente)
+  Contrato?: string;
+  ValorParcela?: number;       // parcela atual (R$)
+  Quitacao?: number;           // saldo devedor (R$)
+  Prazo?: number;              // prazo total (meses)
+  ParcelasRestantes?: string | number;
+  Taxa?: number;               // taxa mensal atual (%)
+  Situacao?: string;
+}
+
+export interface RvxRecord {
+  Beneficiario?: RvxBeneficiario;
+  ResumoFinanceiro?: RvxResumoFinanceiro;
+  Emprestimos?: RvxEmprestimo[];
+}
+
+export interface RvxResponse {
+  data?: RvxRecord[];
+  client?: RvxRecord[];
+  phones?: string[];
+  error?: boolean | string;
+}
+
+// ─── Resultado processado (o que vai pro tool) ───────────────────────────────
+
+export interface RvxConsultResult {
+  eligible: boolean;          // tem benefício ativo + ao menos 1 empréstimo elegível
   nome?: string;
-  beneficio?: string;          // numero do beneficio
-  idade?: number;
-  banco_atual?: string;        // banco do contrato atual
-  margem: number;              // margem disponivel (R$)
-  valor_liberado?: number;     // valor liquido proposto
-  parcela?: number;            // nova parcela (R$)
-  taxa?: number;               // taxa mensal (%)
-  prazo?: number;              // prazo (meses)
-  reason?: string;             // motivo se !eligible
-  raw?: unknown;
+  nomeCompleto?: string;
+  situacaoBeneficio?: string;
+  numeroBeneficio?: string;
+  margemDisponivel?: number;
+  valorBeneficio?: number;
+  emprestimos: RvxEmprestimo[];
+  emprestimosElegiveis: RvxEmprestimo[];  // taxa > 1.30%
+  phones?: string[];
+  reason?: string;            // motivo de !eligible
+  raw?: RvxResponse;
 }
 
-export interface RvxFormalizeInput {
-  cpf: string;
-  nome?: string;
-  banco: string;
-  agencia: string;
-  conta: string;
-  valor?: number;
-  prazo?: number;
-  pix_key?: string;
-}
-
-export interface RvxFormalizeResult {
-  link: string;
-  proposta_id: string;
-  expires_at?: string;
-}
-
-export interface RvxStatus {
-  signed: boolean;
-  signed_at?: string;
-  status: string;
-}
+// ─── Cliente ─────────────────────────────────────────────────────────────────
 
 class RvxError extends Error {
   constructor(
@@ -61,94 +82,106 @@ class RvxError extends Error {
   }
 }
 
-async function rvxFetch<T>(
-  path: string,
-  init: RequestInit & { json?: unknown } = {},
-): Promise<T> {
-  const { json, headers, ...rest } = init;
-  const res = await fetch(`${env.RVX_BASE_URL}${path}`, {
-    ...rest,
-    signal: AbortSignal.timeout(20_000),
-    headers: {
-      Authorization: `Bearer ${env.RVX_KEY}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      ...(headers ?? {}),
-    },
-    body: json !== undefined ? JSON.stringify(json) : (rest.body as BodyInit | undefined),
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    let parsed: unknown = text;
-    try {
-      parsed = JSON.parse(text);
-    } catch {}
-    throw new RvxError(
-      `RVX ${rest.method ?? "GET"} ${path} → ${res.status}`,
-      res.status,
-      parsed,
-    );
-  }
-
-  return (await res.json()) as T;
-}
+const TAXA_REF = 1.30; // taxa mínima para considerar empréstimo elegível à portabilidade
 
 export const rvx = {
   /**
-   * Consulta elegibilidade + simulacao de portabilidade por CPF.
-   * Retorna margem disponivel, valor liberado, nova parcela, taxa.
+   * Consulta dados INSS pelo CPF.
+   * Retorna beneficiário, empréstimos e quais são elegíveis à portabilidade.
    */
-  async simulate(cpf: string): Promise<RvxSimulation> {
+  async consult(cpf: string): Promise<RvxConsultResult> {
+    const cleanCpf = cpf.replace(/\D/g, "");
+
+    let raw: RvxResponse;
     try {
-      const raw = await rvxFetch<Record<string, unknown>>("/v1/portability/simulate", {
+      const res = await fetch("https://api-crm-v2.rvxtech.com.br/api/consultations", {
         method: "POST",
-        json: { cpf: cpf.replace(/\D/g, "") },
+        signal: AbortSignal.timeout(20_000),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${env.RVX_KEY}`,
+        },
+        body: JSON.stringify({ type: "inss", document: cleanCpf }),
       });
 
-      // mapeamento defensivo — adaptar conforme spec real do RVX
-      const eligible = Boolean(
-        (raw as { eligible?: boolean }).eligible ??
-          (raw as { elegivel?: boolean }).elegivel ??
-          (raw as { margem?: number }).margem,
-      );
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new RvxError(`RVX ${res.status}`, res.status, text);
+      }
 
+      raw = (await res.json()) as RvxResponse;
+    } catch (err) {
+      if (err instanceof RvxError) throw err;
+      throw new RvxError(`RVX network: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    // Resposta de erro explícita
+    if (raw.error === true || raw.error === "true") {
       return {
-        eligible,
-        nome: String((raw as { nome?: string }).nome ?? ""),
-        beneficio: String((raw as { beneficio?: string; nb?: string }).beneficio ?? (raw as { nb?: string }).nb ?? ""),
-        idade: Number((raw as { idade?: number }).idade ?? 0) || undefined,
-        banco_atual: String((raw as { banco_atual?: string; bancoAtual?: string }).banco_atual ?? (raw as { bancoAtual?: string }).bancoAtual ?? ""),
-        margem: Number((raw as { margem?: number }).margem ?? 0),
-        valor_liberado: Number((raw as { valor_liberado?: number; valorLiberado?: number }).valor_liberado ?? (raw as { valorLiberado?: number }).valorLiberado ?? 0) || undefined,
-        parcela: Number((raw as { parcela?: number; nova_parcela?: number }).parcela ?? (raw as { nova_parcela?: number }).nova_parcela ?? 0) || undefined,
-        taxa: Number((raw as { taxa?: number; taxa_mensal?: number }).taxa ?? (raw as { taxa_mensal?: number }).taxa_mensal ?? 0) || undefined,
-        prazo: Number((raw as { prazo?: number }).prazo ?? 0) || undefined,
+        eligible: false,
+        emprestimos: [],
+        emprestimosElegiveis: [],
+        phones: raw.phones ?? [],
+        reason: "cpf_nao_encontrado_inss",
         raw,
       };
-    } catch (err) {
-      if (err instanceof RvxError && (err.status === 404 || err.status === 422)) {
-        return { eligible: false, margem: 0, reason: "cpf_nao_elegivel" };
-      }
-      throw err;
     }
-  },
 
-  /**
-   * Formaliza proposta de portabilidade e retorna link de assinatura.
-   */
-  async formalize(input: RvxFormalizeInput): Promise<RvxFormalizeResult> {
-    return rvxFetch<RvxFormalizeResult>("/v1/portability/formalize", {
-      method: "POST",
-      json: { ...input, cpf: input.cpf.replace(/\D/g, "") },
-    });
-  },
+    const records = raw.data ?? raw.client ?? [];
+    if (!records.length) {
+      return {
+        eligible: false,
+        emprestimos: [],
+        emprestimosElegiveis: [],
+        phones: raw.phones ?? [],
+        reason: "sem_registros_inss",
+        raw,
+      };
+    }
 
-  /**
-   * Polling de status da proposta.
-   */
-  async getStatus(propostaId: string): Promise<RvxStatus> {
-    return rvxFetch<RvxStatus>(`/v1/portability/status/${propostaId}`);
+    const rec = records[0];
+    const ben = rec.Beneficiario ?? {};
+    const resumo = rec.ResumoFinanceiro ?? {};
+    const emps = rec.Emprestimos ?? [];
+
+    const nomeCompleto = ben.Nome ?? "";
+    const nome = nomeCompleto.split(" ")[0] || "";
+
+    // Benefício inativo
+    if (ben.Situacao && ben.Situacao !== "Ativo") {
+      return {
+        eligible: false,
+        nome,
+        nomeCompleto,
+        situacaoBeneficio: ben.Situacao,
+        numeroBeneficio: ben.Beneficio,
+        emprestimos: emps,
+        emprestimosElegiveis: [],
+        phones: raw.phones ?? [],
+        reason: `beneficio_${ben.Situacao?.toLowerCase()}`,
+        raw,
+      };
+    }
+
+    // Empréstimos elegíveis: taxa acima da referência (1.30%)
+    const emprestimosElegiveis = emps.filter(
+      (e) => Number(e.Taxa ?? 0) > TAXA_REF && Number(e.Quitacao ?? 0) > 0,
+    );
+
+    return {
+      eligible: emprestimosElegiveis.length > 0,
+      nome,
+      nomeCompleto,
+      situacaoBeneficio: ben.Situacao,
+      numeroBeneficio: ben.Beneficio,
+      margemDisponivel: resumo.MargemDisponivel,
+      valorBeneficio: resumo.ValorBeneficio,
+      emprestimos: emps,
+      emprestimosElegiveis,
+      phones: raw.phones ?? [],
+      reason: emprestimosElegiveis.length === 0 ? "sem_emprestimos_elegiveis" : undefined,
+      raw,
+    };
   },
 };
 
