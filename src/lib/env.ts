@@ -22,7 +22,11 @@ const schema = z.object({
   EVO_WEBHOOK_SECRET: z.string().optional(),
 
   JOINBANK_BASE_URL: z.string().url().default("https://integration.ajin.io"),
-  JOINBANK_KEY: z.string().min(20),
+  JOINBANK_KEY: z.string().default(""),
+
+  // RVX — portabilidade consignado INSS (Ana)
+  RVX_BASE_URL: z.string().url().default("https://api.rvx.com.br"),
+  RVX_KEY: z.string().default(""),
 
   SUPABASE_URL: z.string().url(),
   SUPABASE_ANON_KEY: z.string().min(20),

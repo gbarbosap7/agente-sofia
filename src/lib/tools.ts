@@ -1,9 +1,11 @@
 import { Prisma, type Agent, type Conversation } from "@prisma/client";
 import { prisma } from "./prisma";
 import { joinbank } from "./joinbank";
-import { alertOwner } from "./evolution";
+import { rvx } from "./rvx";
+import { alertOwner, sendEvoMessage } from "./evolution";
 import { dc } from "@/channels/datacrazy/client";
 import { searchRag } from "./rag";
+import { getChannelConfig } from "./agent";
 
 // import lazy de queue pra evitar ciclo (queue → gemini → tools)
 async function enqueueSignaturePoll(data: { conversationId: string; contractId: string }) {
@@ -185,12 +187,22 @@ const transfer_human: ToolDef = {
       required: ["reason"],
     },
   },
-  async execute(args, { conversation }) {
+  async execute(args, { agent, conversation }) {
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: { aiEnabled: false, handoffReason: String(args.reason) },
     });
-    if (args.department_id && conversation.externalConvId) {
+    if (conversation.channel === "evolution") {
+      // Evolution nao tem departamentos — so desliga IA e manda nota
+      const cfg = getChannelConfig(agent);
+      await sendEvoMessage({
+        number: conversation.phone,
+        text: "Um momento! Vou te conectar com um atendente.",
+        baseUrl: cfg.baseUrl,
+        apiKey: cfg.apiKey,
+        instance: cfg.instance,
+      }).catch(() => null);
+    } else if (args.department_id && conversation.externalConvId) {
       await dc.transferDepartment(conversation.externalConvId, String(args.department_id));
     }
     await alertOwner(
@@ -221,9 +233,9 @@ const finish_conversation: ToolDef = {
       where: { id: conversation.id },
       data: { state: "closed", handoffReason: String(args.reason) },
     });
-    if (conversation.externalConvId) {
+    if (conversation.channel !== "evolution" && conversation.externalConvId) {
       try { await dc.finishConversation(conversation.externalConvId); }
-      catch { /* ignora — nao bloqueia o ack */ }
+      catch { /* ignora */ }
     }
     return { ok: true };
   },
@@ -278,6 +290,191 @@ const rag_search: ToolDef = {
   },
 };
 
+// =====================================================================
+// consult_rvx — consulta elegibilidade + simulacao INSS portabilidade (Ana)
+// =====================================================================
+const consult_rvx: ToolDef = {
+  declaration: {
+    name: "consult_rvx",
+    description:
+      "Consulta elegibilidade e simulacao de portabilidade consignado INSS pelo CPF. Use APOS extract_cpf. Retorna: eligible, nome, margem, valor_liberado, parcela, taxa, banco_atual.",
+    parameters: {
+      type: "object",
+      properties: {
+        cpf: { type: "string", description: "CPF do cliente (qualquer formatacao)" },
+      },
+      required: ["cpf"],
+    },
+  },
+  async execute(args, { conversation }) {
+    const cpf = onlyDigits(args.cpf);
+    if (cpf.length !== 11) return { ok: false, error: "cpf_invalido" };
+
+    const sim = await rvx.simulate(cpf);
+
+    const meta = (conversation.metadata as Record<string, unknown> | null) ?? {};
+    meta.rvxSimulation = sim;
+    if (sim.nome && !meta.name) meta.name = sim.nome;
+
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        metadata: meta as Prisma.InputJsonValue,
+        contactName: sim.nome && !conversation.contactName ? sim.nome : conversation.contactName,
+      },
+    });
+    return sim;
+  },
+};
+
+// =====================================================================
+// collect_bank_data — grava dados bancarios na metadata da conversa (Ana)
+// =====================================================================
+const collect_bank_data: ToolDef = {
+  declaration: {
+    name: "collect_bank_data",
+    description:
+      "Salva banco, agencia e conta do cliente na conversa. Use depois do aceite da proposta.",
+    parameters: {
+      type: "object",
+      properties: {
+        banco: { type: "string", description: "Nome ou codigo do banco." },
+        agencia: { type: "string", description: "Numero da agencia." },
+        conta: { type: "string", description: "Numero da conta com digito." },
+        tipo_conta: {
+          type: "string",
+          description: "corrente ou poupanca (opcional, default corrente).",
+        },
+      },
+      required: ["banco", "agencia", "conta"],
+    },
+  },
+  async execute(args, { conversation }) {
+    const meta = (conversation.metadata as Record<string, unknown> | null) ?? {};
+    meta.bankData = {
+      banco: String(args.banco),
+      agencia: String(args.agencia),
+      conta: String(args.conta),
+      tipo_conta: String(args.tipo_conta ?? "corrente"),
+    };
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { metadata: meta as Prisma.InputJsonValue },
+    });
+    return { ok: true };
+  },
+};
+
+// =====================================================================
+// request_documents — solicita foto RG + selfie via Evolution (Ana)
+// =====================================================================
+const request_documents: ToolDef = {
+  declaration: {
+    name: "request_documents",
+    description:
+      "Envia mensagem pedindo foto do RG (frente e verso) e selfie segurando o documento. Use apos coletar dados bancarios.",
+    parameters: {
+      type: "object",
+      properties: {},
+    },
+  },
+  async execute(_args, { agent, conversation }) {
+    const nome = conversation.contactName ?? "cliente";
+    const msg =
+      `Perfeito, ${nome}! Pra finalizar, preciso de:\n` +
+      `1️⃣ Foto do seu *RG* (frente e verso)\n` +
+      `2️⃣ Uma *selfie* segurando o documento aberto\n\n` +
+      `Pode enviar por aqui mesmo 😊`;
+
+    if (conversation.channel === "evolution") {
+      const cfg = getChannelConfig(agent);
+      await sendEvoMessage({
+        number: conversation.phone,
+        text: msg,
+        baseUrl: cfg.baseUrl,
+        apiKey: cfg.apiKey,
+        instance: cfg.instance,
+      });
+    } else if (conversation.externalConvId) {
+      await dc.sendMessage({ conversationId: conversation.externalConvId, text: msg });
+    }
+
+    const meta = (conversation.metadata as Record<string, unknown> | null) ?? {};
+    meta.docsRequested = true;
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { metadata: meta as Prisma.InputJsonValue },
+    });
+
+    return { ok: true };
+  },
+};
+
+// =====================================================================
+// formalize_proposal — submete proposta ao RVX e retorna link assinatura (Ana)
+// =====================================================================
+const formalize_proposal: ToolDef = {
+  declaration: {
+    name: "formalize_proposal",
+    description:
+      "Formaliza a proposta de portabilidade no RVX usando CPF + dados bancarios ja coletados. Retorna link de assinatura pra enviar ao cliente. Use somente apos ter dados bancarios E documentos confirmados.",
+    parameters: {
+      type: "object",
+      properties: {},
+    },
+  },
+  async execute(_args, { agent, conversation }) {
+    const meta = (conversation.metadata as Record<string, unknown> | null) ?? {};
+    const cpf = String(meta.cpf ?? "");
+    if (!cpf) return { ok: false, error: "cpf_ausente" };
+
+    const bank = meta.bankData as Record<string, string> | undefined;
+    if (!bank?.banco || !bank?.agencia || !bank?.conta) {
+      return { ok: false, error: "dados_bancarios_ausentes" };
+    }
+
+    const sim = meta.rvxSimulation as Record<string, unknown> | undefined;
+
+    const result = await rvx.formalize({
+      cpf,
+      nome: conversation.contactName ?? undefined,
+      banco: bank.banco,
+      agencia: bank.agencia,
+      conta: bank.conta,
+      valor: sim?.valor_liberado as number | undefined,
+      prazo: sim?.prazo as number | undefined,
+    });
+
+    meta.propostaId = result.proposta_id;
+    meta.signatureUrl = result.link;
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { metadata: meta as Prisma.InputJsonValue },
+    });
+
+    // Envia o link diretamente (fora da resposta de texto da IA)
+    const linkMsg = `Aqui está seu link de assinatura 👇\n${result.link}`;
+    if (conversation.channel === "evolution") {
+      const cfg = getChannelConfig(agent);
+      await sendEvoMessage({
+        number: conversation.phone,
+        text: linkMsg,
+        baseUrl: cfg.baseUrl,
+        apiKey: cfg.apiKey,
+        instance: cfg.instance,
+      }).catch(() => null);
+    } else if (conversation.externalConvId) {
+      await dc.sendMessage({ conversationId: conversation.externalConvId, text: linkMsg }).catch(() => null);
+    }
+
+    await alertOwner(
+      `🎉 proposta formalizada: ${conversation.contactName ?? conversation.phone} — proposta ${result.proposta_id}`,
+    );
+
+    return { ok: true, link: result.link, proposta_id: result.proposta_id };
+  },
+};
+
 export const TOOLS: Record<string, ToolDef> = {
   extract_cpf,
   consult_joinbank,
@@ -286,6 +483,11 @@ export const TOOLS: Record<string, ToolDef> = {
   finish_conversation,
   alert_owner,
   rag_search,
+  // Ana — INSS portabilidade
+  consult_rvx,
+  collect_bank_data,
+  request_documents,
+  formalize_proposal,
 };
 
 export function getDeclarations() {
